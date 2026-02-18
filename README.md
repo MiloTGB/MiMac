@@ -41,6 +41,7 @@ Run `make all` to execute all three phases at once. Phases are independent — r
 | `make update` | Update via topgrade (or brew) |
 | `make updates` | Install macOS software updates |
 | `make uninstall` | Remove symlinks, optionally rollback defaults |
+| `make dock` | Set up Dock with preferred apps |
 | `make fix-exec` | Fix executable permissions on scripts |
 
 ## Philosophy
@@ -69,7 +70,7 @@ MiMac/
     ├── lib.sh        # Shared helpers
     ├── install       # Unified entrypoint (dispatches to phases)
     ├── setup         # Phase 1
-    ├── brew          # Phase 2
+    ├── brew-packages # Phase 2
     ├── post-install  # Phase 3
     ├── status        # Installation status
     ├── defaults.sh   # macOS defaults
