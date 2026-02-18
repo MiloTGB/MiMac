@@ -79,23 +79,6 @@ fi
 
 BROWSERS_DIR="$REPO_ROOT/assets/browsers"
 
-# Safari
-if [[ -d "/Applications/Safari.app" ]]; then
-  apply_defaults "$BROWSERS_DIR/safari-defaults.sh" "Safari" || ((failed++))
-  if [[ -f "$BROWSERS_DIR/safari-extensions.txt" ]]; then
-    if [[ -t 0 ]]; then
-      printf "[post-install] Open Safari extension URLs? [y/N]: "
-      read -r answer </dev/tty
-      if [[ "$answer" =~ ^[Yy]$ ]]; then
-        open_extension_urls "$BROWSERS_DIR/safari-extensions.txt" "Safari" || ((failed++))
-      else
-        log "Skipped Safari extension URLs"
-      fi
-    fi
-  fi
-else
-  log "Skipping Safari (not installed)"
-fi
 
 # Google Chrome
 if [[ -d "/Applications/Google Chrome.app" ]]; then
