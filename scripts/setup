@@ -663,7 +663,6 @@ MIMAC_SUCCESS=1
 
 # Hint to reload shell
 if (( ! DRY_RUN )) && (( ERRORS == 0 )); then
-  echo "  Run \`exec zsh\` to reload your shell, or open a new terminal."
   echo ""
 fi
 
