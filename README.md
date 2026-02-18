@@ -10,7 +10,7 @@ cd ~/MiMac
 make install
 make brew
 make post-install
-exec zsh
+make dock
 ```
 
 ## Phases
@@ -35,15 +35,72 @@ Run `make all` to execute all three phases at once. Phases are independent — r
 | `make dotfiles` | Symlink dotfiles only |
 | `make defaults` | Apply macOS defaults only |
 | `make trackpad` | Apply defaults including trackpad gestures |
+| `make dock` | Set up Dock with preferred apps |
+| `make snapshot` | Capture current machine state into project |
 | `make harden` | Security hardening (Touch ID sudo, firewall) |
 | `make status` | Show installation status |
 | `make doctor` | Run `brew doctor` |
 | `make update` | Update via topgrade (or brew) |
 | `make updates` | Install macOS software updates |
 | `make uninstall` | Remove symlinks, optionally rollback defaults |
-| `make dock` | Set up Dock with preferred apps |
-| `make snapshot` | Capture current machine state into project |
 | `make fix-exec` | Fix executable permissions on scripts |
+
+## Migrating to a New Machine
+
+### Step 1: Snapshot Your Current Machine
+
+Before leaving your old machine, capture its current state:
+
+```bash
+cd ~/Projects/MiMac    # or wherever your dev copy lives
+make snapshot
+git push
+```
+
+This updates the Brewfile, Dock layout, and app preferences to match what's actually installed. Review the diff before pushing — it's your chance to drop anything you don't want to carry forward.
+
+### Step 2: Set Up the New Machine
+
+On the fresh Mac:
+
+```bash
+# Install Xcode Command Line Tools (if not already present)
+xcode-select --install
+
+# Clone and run Phase 1 (dotfiles, tools, defaults)
+git clone https://github.com/MiloTGB/MiMac.git ~/MiMac
+cd ~/MiMac
+make install
+```
+
+Phase 1 doesn't need Homebrew — it links dotfiles, sets macOS defaults, and configures your shell.
+
+### Step 3: Install Homebrew Packages
+
+```bash
+make brew
+```
+
+This installs Homebrew if needed, then walks you through an interactive selection of formulae and casks from the Brewfile. Already-installed packages are skipped automatically.
+
+### Step 4: Configure Apps
+
+```bash
+make post-install
+make dock
+```
+
+Post-install applies app preferences (iTerm2, Audio Hijack, browser policies) and sets up login items. `make dock` populates the Dock with your preferred app layout.
+
+### Step 5: Manual Steps
+
+Some things can't be automated:
+
+- **Mac App Store apps** — Final Cut Pro, iMovie, Keynote, Numbers, Pages, Pixelmator Pro (sign in to the App Store and redownload)
+- **Manual installers** — FL Studio, FL Cloud Plugins
+- **Safari settings** — sandboxed on macOS Sequoia+, configure in Safari → Settings
+- **1Password / Bitwarden** — sign in and sync
+- **Cloud storage** — sign in to iCloud, Google Drive, Dropbox, etc.
 
 ## Philosophy
 
@@ -59,30 +116,29 @@ State lives in `~/.mimac`. Rollback scripts are generated automatically for defa
 
 ```
 MiMac/
-├── Makefile          # All targets
-├── Brewfile          # Homebrew packages
-├── dotfiles/         # Symlinked to ~/
-├── bin/              # Extra scripts linked to ~/bin
-├── assets/           # App configs, browser policies
+├── Makefile            # All targets
+├── Brewfile            # Homebrew packages
+├── dotfiles/           # Symlinked to ~/
+├── bin/                # Extra scripts linked to ~/bin
+├── assets/             # App configs, browser policies
 │   ├── browsers/
 │   ├── preferences/
 │   └── topgrade.toml
 └── scripts/
-    ├── lib.sh        # Shared helpers
-    ├── install       # Unified entrypoint (dispatches to phases)
-    ├── setup         # Phase 1
-    ├── brew-packages # Phase 2
-    ├── post-install  # Phase 3
-    ├── status        # Installation status
-    ├── defaults.sh   # macOS defaults
-    ├── hardening.sh  # Security hardening
-    ├── uninstall     # Conservative uninstaller
-    └── ...           # doctor, syncall, check-updates, etc.
+    ├── lib.sh          # Shared helpers
+    ├── install         # Unified entrypoint (dispatches to phases)
+    ├── setup           # Phase 1
+    ├── brew-packages   # Phase 2
+    ├── post-install    # Phase 3
+    ├── dock-setup      # Dock layout
+    ├── snapshot        # Capture machine state
+    ├── status          # Installation status
+    ├── defaults.sh     # macOS defaults
+    ├── hardening.sh    # Security hardening
+    ├── uninstall       # Conservative uninstaller
+    └── ...             # doctor, syncall, check-updates, etc.
 ```
 
 ## License
 
 MIT — milothegalaxyboy
-
----
-
