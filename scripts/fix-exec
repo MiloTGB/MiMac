@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-# Resolve repo paths (works from MiMac or mrk-dev)
+# Resolve repo paths (works from MiMac or MiMac-dev)
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$BASE_DIR")"
 
@@ -12,7 +12,7 @@ TARGETS=(
   "$HOME/bin"
 )
 
-echo "🔧 Ensuring executable bits on mrk scripts…"
+echo "🔧 Ensuring executable bits on MiMac scripts…"
 for dir in "${TARGETS[@]}"; do
   if [ -d "$dir" ]; then
     # Only chmod top-level files in each target dir

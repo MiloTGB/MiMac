@@ -7,7 +7,7 @@ set -euo pipefail
 #   defaults.sh                 # apply all defaults (except trackpad)
 #   defaults.sh --with-trackpad # also apply trackpad gesture settings
 
-ROLL_DIR="$HOME/.mrk"
+ROLL_DIR="$HOME/.mimac"
 ROLLBACK="$ROLL_DIR/defaults-rollback.sh"
 
 WITH_TRACKPAD=false

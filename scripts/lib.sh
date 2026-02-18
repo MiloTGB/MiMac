@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# lib.sh — shared helpers for mrk scripts
+# lib.sh — shared helpers for MiMac scripts
 # Source this file; do not execute directly.
 
 # Constants

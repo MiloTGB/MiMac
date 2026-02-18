@@ -342,7 +342,7 @@ install_brewfile() {
   fi
 
   # Parse Brewfile and collect items
-  TEMP_BREWFILE=$(mktemp /tmp/mrk-brewfile.XXXXXX)
+  TEMP_BREWFILE=$(mktemp /tmp/mimac-brewfile.XXXXXX)
 
   local formulae_count=0
   local casks_count=0
@@ -506,7 +506,7 @@ main() {
   log "Starting brew installation process..."
 
   # Pre-flight: check if setup (Phase 1) has been run
-  if [[ ! -d "$HOME/.mrk" ]] && [[ "$(basename "$(dscl . -read "/Users/$USER" UserShell 2>/dev/null | awk '{print $2}')" 2>/dev/null)" != "zsh" ]]; then
+  if [[ ! -d "$HOME/.mimac" ]] && [[ "$(basename "$(dscl . -read "/Users/$USER" UserShell 2>/dev/null | awk '{print $2}')" 2>/dev/null)" != "zsh" ]]; then
     warn "MiMac setup does not appear to have been run (~/.mimac not found and login shell is not zsh)."
     warn "It's recommended to run Phase 1 first: make setup"
   fi

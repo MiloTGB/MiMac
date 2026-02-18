@@ -4,11 +4,11 @@
 set -e
 TARGET_DIR="$HOME/MiMac"
 
-echo "🧹 Cleaning up old mrk install…"
+echo "🧹 Cleaning up old MiMac install…"
 if [ -d "$TARGET_DIR" ]; then
   cd "$TARGET_DIR" || exit 1
   if make uninstall >/dev/null 2>&1; then
-    echo "✓ Uninstalled previous mrk."
+    echo "✓ Uninstalled previous MiMac."
   else
     echo "⚠️ No uninstall target or cleanup incomplete."
   fi
@@ -20,10 +20,10 @@ cd "$TARGET_DIR"
 echo "🔧 Fixing permissions…"
 make fix-exec
 
-echo "🚀 Installing mrk…"
+echo "🚀 Installing MiMac…"
 make install
 
 echo "🩺 Running doctor…"
 make doctor || true
 
-echo "✅ Dev test complete. Fresh mrk installed from GitHub."
+echo "✅ Dev test complete. Fresh MiMac installed from GitHub."

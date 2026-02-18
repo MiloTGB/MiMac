@@ -3,7 +3,7 @@ set -euo pipefail
 
 # MiMac hardening — opt-in security tweaks with rollback (inspired by Strap)
 
-ROLL_DIR="$HOME/.mrk"
+ROLL_DIR="$HOME/.mimac"
 ROLL="$ROLL_DIR/hardening-rollback.sh"
 
 # Create rollback directory and script with error checking
@@ -31,8 +31,8 @@ fi
 if $have_sudo; then
   if ! grep -q 'pam_tid.so' /etc/pam.d/sudo 2>/dev/null; then
     log "Enabling Touch ID for sudo"
-    if sudo cp /etc/pam.d/sudo /etc/pam.d/sudo.backup.mrk 2>/dev/null; then
-      rollback "sudo mv /etc/pam.d/sudo.backup.mrk /etc/pam.d/sudo"
+    if sudo cp /etc/pam.d/sudo /etc/pam.d/sudo.backup.mimac 2>/dev/null; then
+      rollback "sudo mv /etc/pam.d/sudo.backup.mimac /etc/pam.d/sudo"
       tmpfile="$(mktemp)"
       # Ensure temp file is cleaned up on any exit
       trap 'rm -f "$tmpfile"' EXIT
@@ -42,7 +42,7 @@ if $have_sudo; then
       else
         warn "Failed to write new sudo PAM config (may require password)"
         # Restore backup
-        sudo mv /etc/pam.d/sudo.backup.mrk /etc/pam.d/sudo 2>/dev/null || true
+        sudo mv /etc/pam.d/sudo.backup.mimac /etc/pam.d/sudo 2>/dev/null || true
       fi
       rm -f "$tmpfile"
       trap - EXIT

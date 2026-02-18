@@ -6,7 +6,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 INSTALL_BIN="$HOME/bin"
-STATE_DIR="$HOME/.mrk"
+STATE_DIR="$HOME/.mimac"
 BREWFILE="$REPO_ROOT/Brewfile"
 
 ok()    { printf '\033[32m✓ %s\033[0m\n' "$*"; }
@@ -15,7 +15,7 @@ err()   { printf '\033[31m✗ %s\033[0m\n' "$*"; }
 info()  { printf '  %s\n' "$*"; }
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  mrk Installation Status"
+echo "  MiMac Installation Status"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
@@ -82,7 +82,7 @@ if [[ -d "$INSTALL_BIN" ]]; then
     err "  $broken broken symlink(s)"
   fi
   if (( linked == 0 && broken == 0 )); then
-    info "  No mrk tools linked"
+    info "  No MiMac tools linked"
   fi
 else
   warn "  $INSTALL_BIN not found"

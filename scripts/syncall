@@ -8,7 +8,7 @@ set -euo pipefail
 : "${SYNCALL_DRY_RUN:=0}"     # 1 = preview only (or pass --dry-run)
 : "${SYNCALL_EXCLUDES:="$HOME/Library:$HOME/.Trash:$HOME/.venvs:$HOME/.cache:$HOME/.cargo:$HOME/.npm:_build:node_modules:.git/modules"}"
 : "${SYNCALL_DEFAULT_REMOTE:=origin}" # fallback remote if no upstream is set
-: "${SYNCALL_SKIP_PATHS:="$HOME/mrk"}" # colon-separated folders to skip entirely
+: "${SYNCALL_SKIP_PATHS:="$HOME/MiMac"}" # colon-separated folders to skip entirely
 
 # Colors
 if command -v tput >/dev/null 2>&1 && [[ -t 1 ]]; then
@@ -122,7 +122,7 @@ main() {
   for r in "${repos[@]}"; do
     [[ -d "$r/.git" ]] || continue
 
-    # Skip configured paths (e.g., ~/mrk)
+    # Skip configured paths (e.g., ~/MiMac)
     if should_skip_repo "$r"; then
       warn "skip (configured): $r"
       continue
@@ -151,8 +151,8 @@ main() {
   echo
   good "––––––––––––––"
   log "${bold}Sync complete${reset}"
-  mkdir -p "${HOME}/.cache/mrk"
-  echo "syncall ran on $(date)" >>"${HOME}/.cache/mrk/syncall.log"
+  mkdir -p "${HOME}/.cache/mimac"
+  echo "syncall ran on $(date)" >>"${HOME}/.cache/mimac/syncall.log"
   good "––––––––––––––"
 }
 

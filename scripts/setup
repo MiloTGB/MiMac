@@ -44,8 +44,8 @@ Usage: scripts/setup [options]
   --continue-on-error   Continue with remaining phases if one fails
   --debug               Enable bash tracing (set -x)
 Env:
-  MRK_DOTFILES_REPO    If set, clones repo to ~/.dotfiles and runs script/setup and script/strap-after-setup if present
-  MRK_LOGIN_MSG        If set, writes login window message (requires sudo), rollback added to ~/.mrk/defaults-rollback.sh
+  MIMAC_DOTFILES_REPO    If set, clones repo to ~/.dotfiles and runs script/setup and script/strap-after-setup if present
+  MIMAC_LOGIN_MSG        If set, writes login window message (requires sudo), rollback added to ~/.mimac/defaults-rollback.sh
 USAGE
       exit 0
       ;;
@@ -62,9 +62,9 @@ fi
 
 # Track current phase for error reporting on unexpected exit
 CURRENT_STEP=""
-MRK_SUCCESS=""
+MIMAC_SUCCESS=""
 cleanup() {
-  if [[ -z "$MRK_SUCCESS" ]]; then
+  if [[ -z "$MIMAC_SUCCESS" ]]; then
     err "!!! ${CURRENT_STEP:-unknown step} FAILED"
     err "See $LOGFILE for details"
   fi
@@ -165,9 +165,9 @@ validate_setup() {
     ((issues++))
   fi
   
-  if [[ -n "${MRK_DOTFILES_REPO:-}" ]]; then
-    if ! is_valid_git_url "$MRK_DOTFILES_REPO"; then
-      err "Invalid MRK_DOTFILES_REPO URL: $MRK_DOTFILES_REPO"
+  if [[ -n "${MIMAC_DOTFILES_REPO:-}" ]]; then
+    if ! is_valid_git_url "$MIMAC_DOTFILES_REPO"; then
+      err "Invalid MIMAC_DOTFILES_REPO URL: $MIMAC_DOTFILES_REPO"
       ((issues++))
     fi
   fi
@@ -457,27 +457,27 @@ is_valid_git_url() {
 }
 
 phase_ext_dotfiles() {
-  if [[ -z "${MRK_DOTFILES_REPO:-}" ]]; then
+  if [[ -z "${MIMAC_DOTFILES_REPO:-}" ]]; then
     return 0
   fi
   
   local DOTDIR="$HOME/.dotfiles"
   
   # Validate URL format
-  if ! is_valid_git_url "$MRK_DOTFILES_REPO"; then
-    err "Invalid git URL format: $MRK_DOTFILES_REPO"
+  if ! is_valid_git_url "$MIMAC_DOTFILES_REPO"; then
+    err "Invalid git URL format: $MIMAC_DOTFILES_REPO"
     warn "URL should be in format: https://github.com/user/repo.git or git@github.com:user/repo.git"
     return 1
   fi
   
   if [[ ! -d "$DOTDIR/.git" ]]; then
     if (( DRY_RUN )); then
-      dry "Would clone external dotfiles repo: $MRK_DOTFILES_REPO to $DOTDIR"
+      dry "Would clone external dotfiles repo: $MIMAC_DOTFILES_REPO to $DOTDIR"
       return 0
     fi
     
-    log "Cloning external dotfiles repo: $MRK_DOTFILES_REPO"
-    if ! git clone --depth 1 "$MRK_DOTFILES_REPO" "$DOTDIR"; then
+    log "Cloning external dotfiles repo: $MIMAC_DOTFILES_REPO"
+    if ! git clone --depth 1 "$MIMAC_DOTFILES_REPO" "$DOTDIR"; then
       err "Failed to clone dotfiles repo"
       return 1
     fi
@@ -530,7 +530,7 @@ phase_defaults() {
   
   if (( DRY_RUN )); then
     dry "Would apply macOS defaults"
-    if [[ -n "${MRK_LOGIN_MSG:-}" ]]; then
+    if [[ -n "${MIMAC_LOGIN_MSG:-}" ]]; then
       dry "Would set login window message"
     fi
     return 0
@@ -547,15 +547,15 @@ phase_defaults() {
     warn "defaults.sh not found/executable; skipping"
   fi
 
-  if [[ -n "${MRK_LOGIN_MSG:-}" ]]; then
+  if [[ -n "${MIMAC_LOGIN_MSG:-}" ]]; then
     if command -v sudo >/dev/null 2>&1; then
       log "Setting login window message"
       # Note: defaults write handles string escaping, but we validate the message isn't empty
-      if [[ -z "$MRK_LOGIN_MSG" ]]; then
-        warn "MRK_LOGIN_MSG is empty, skipping"
+      if [[ -z "$MIMAC_LOGIN_MSG" ]]; then
+        warn "MIMAC_LOGIN_MSG is empty, skipping"
         return 0
       fi
-      if sudo defaults write /Library/Preferences/com.apple.loginwindow LoginwindowText "$MRK_LOGIN_MSG"; then
+      if sudo defaults write /Library/Preferences/com.apple.loginwindow LoginwindowText "$MIMAC_LOGIN_MSG"; then
         echo "sudo defaults delete /Library/Preferences/com.apple.loginwindow LoginwindowText" >> "$ROLLBACK"
       else
         err "Failed to set login window message"
@@ -659,7 +659,7 @@ else
 fi
 
 # Mark success so the EXIT trap knows we completed normally
-MRK_SUCCESS=1
+MIMAC_SUCCESS=1
 
 # Hint to reload shell
 if (( ! DRY_RUN )) && (( ERRORS == 0 )); then

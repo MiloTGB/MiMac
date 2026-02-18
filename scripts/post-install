@@ -28,7 +28,7 @@ apply_defaults(){
 # Copy a managed policy JSON to the browser's policy directory
 install_browser_policy(){
   local src="$1" dest_dir="$2" name="$3"
-  local dest="$dest_dir/mrk-policy.json"
+  local dest="$dest_dir/mimac-policy.json"
   mkdir -p "$dest_dir"
   if [[ -f "$dest" ]] && cmp -s "$src" "$dest"; then
     log "$name policy already installed"

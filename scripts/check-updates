@@ -6,7 +6,7 @@ IFS=$'\n\t'
 # Runs silently unless updates are available
 
 # Configuration
-CACHE_DIR="${HOME}/.cache/mrk"
+CACHE_DIR="${HOME}/.cache/mimac"
 TIMESTAMP_FILE="${CACHE_DIR}/last-update-check"
 CHECK_INTERVAL_DAYS=7
 REPO_DIR="${REPO_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"

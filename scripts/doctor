@@ -26,7 +26,7 @@ fix_bin() {
     # shellcheck disable=SC2016
     {
       echo ''
-      echo '# Added by mrk doctor'
+      echo '# Added by MiMac doctor'
       echo '[ -d "$HOME/bin" ] && case ":$PATH:" in *":$HOME/bin:"*) ;; *) export PATH="$HOME/bin:$PATH";; esac'
     } >>"${HOME}/.zshrc"
     ok "Added ~/bin to PATH in .zshrc"
