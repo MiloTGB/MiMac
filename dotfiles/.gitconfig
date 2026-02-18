@@ -1,0 +1,28 @@
+# Git Configuration for milothegalaxyboy
+# Customized from MiMac template
+
+[user]
+  name = Milo The Galaxy Boy
+  email = milotgb@gmail.com
+
+[core]
+  editor = nano
+  autocrlf = input
+
+[init]
+  defaultBranch = main
+
+[pull]
+  rebase = false
+
+[color]
+  ui = auto
+
+[alias]
+  st = status
+  co = checkout
+  br = branch
+  ci = commit
+  unstage = reset HEAD --
+  last = log -1 HEAD
+  lg = log --graph --oneline --decorate --all

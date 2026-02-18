@@ -1,0 +1,54 @@
+# Logs
+*.log
+MiMac-install.log
+MiMac1-install.log
+MiMac2-install.log
+*.log.*
+
+# macOS
+.DS_Store
+
+# Dev-only scripts (not distributed)
+scripts/clean-test
+.AppleDouble
+.LSOverride
+._*
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+*.sublime-*
+
+# Backup directories (if tracked)
+backups/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# State directories (user-specific)
+.MiMac/
+.MiMac1/
+.MiMac2/
+
+# Claude Code runtime data
+.claude/
+dotfiles/.claude/
+
+# Test files
+test-*
+*.test
+
+# Generated files
+.install-manifest
+MANIFEST.json
+
+# Browser extension lists (user-specific)
+assets/browsers/*-extensions.txt
+
+# Homebrew
+Brewfile.lock.json
