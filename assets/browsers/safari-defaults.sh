@@ -3,81 +3,52 @@ set -euo pipefail
 
 # Safari power-user defaults
 #
-# Applied by MiMac post-install. No rollback — re-run MiMac defaults
-# or reset Safari preferences manually to revert.
+# Applied by MiMac post-install.
 #
-# On macOS Sonoma+, Safari preferences live in a sandboxed container.
-# We write to the container path directly.
+# NOTE: macOS Sequoia (15+) blocks defaults write to Safari's sandboxed
+# container. These settings must be configured manually in Safari preferences
+# on Sequoia and later. This script will detect the restriction and skip
+# gracefully.
 
 log(){ printf "[safari-defaults] %s\n" "$*"; }
 
-SAFARI_CONTAINER="$HOME/Library/Containers/com.apple.Safari/Data/Library/Preferences/com.apple.Safari"
-SAFARI_DOMAIN="com.apple.Safari"
-
-# Use container path if it exists, otherwise fall back to standard domain
-write_safari() {
-  if [[ -d "$HOME/Library/Containers/com.apple.Safari" ]]; then
-    defaults write "$SAFARI_CONTAINER" "$@"
-  else
-    defaults write "$SAFARI_DOMAIN" "$@"
+# Test if we can write to Safari's preferences
+can_write_safari() {
+  # Try writing a harmless test key
+  if defaults write com.apple.Safari _MiMacTest -bool true 2>/dev/null; then
+    defaults delete com.apple.Safari _MiMacTest 2>/dev/null || true
+    return 0
   fi
+  return 1
 }
+
+if ! can_write_safari; then
+  log "Safari preferences are sandboxed on this macOS version."
+  log "Please configure these settings manually in Safari → Settings:"
+  log "  • General: Show full URL in Smart Search Field"
+  log "  • General: Show Favorites Bar, Show Status Bar"
+  log "  • Privacy: Prevent cross-site tracking, Send DNT header"
+  log "  • General: Uncheck 'Open safe files after downloading'"
+  log "  • Advanced: Enable Develop menu"
+  log "  • Extensions: Enable extensions + auto-update"
+  exit 0
+fi
 
 failed=0
 
-###############################################################################
-# General                                                                     #
-###############################################################################
-
 # Show full URL in Smart Search Field
-write_safari ShowFullURLInSmartSearchField -bool true || ((failed++))
-
-# Show favorites bar
-write_safari ShowFavoritesBar-v2 -bool true || ((failed++))
-
-# Show status bar
-write_safari ShowOverlayStatusBar -bool true || ((failed++))
-
-###############################################################################
-# Privacy & Security                                                          #
-###############################################################################
-
-# Send Do Not Track header
-write_safari SendDoNotTrackHTTPHeader -bool true || ((failed++))
-
-# Prevent cross-site tracking
-write_safari BlockStoragePolicy -int 2 || ((failed++))
-
-# Don't auto-open "safe" downloads
-write_safari AutoOpenSafeDownloads -bool false || ((failed++))
-
-# Disable AutoFill for credit cards
-write_safari AutoFillCreditCardData -bool false || ((failed++))
-
-###############################################################################
-# Developer                                                                   #
-###############################################################################
-
-# Enable Develop menu
-write_safari IncludeDevelopMenu -bool true || ((failed++))
-
-# Enable developer extras (Web Inspector in contextual menu)
-write_safari WebKitDeveloperExtrasEnabledPreferenceKey -bool true || ((failed++))
-write_safari "com.apple.Safari.ContentPageGroupIdentifier.WebKit2DeveloperExtrasEnabled" -bool true || ((failed++))
-
-###############################################################################
-# Extensions                                                                  #
-###############################################################################
-
-# Enable extensions
-write_safari ExtensionsEnabled -bool true || ((failed++))
-
-# Auto-update extensions
-write_safari InstallExtensionUpdatesAutomatically -bool true || ((failed++))
-
-###############################################################################
-# Summary                                                                     #
-###############################################################################
+defaults write com.apple.Safari ShowFullURLInSmartSearchField -bool true || ((failed++))
+defaults write com.apple.Safari ShowFavoritesBar-v2 -bool true || ((failed++))
+defaults write com.apple.Safari ShowOverlayStatusBar -bool true || ((failed++))
+defaults write com.apple.Safari SendDoNotTrackHTTPHeader -bool true || ((failed++))
+defaults write com.apple.Safari BlockStoragePolicy -int 2 || ((failed++))
+defaults write com.apple.Safari AutoOpenSafeDownloads -bool false || ((failed++))
+defaults write com.apple.Safari AutoFillCreditCardData -bool false || ((failed++))
+defaults write com.apple.Safari IncludeDevelopMenu -bool true || ((failed++))
+defaults write com.apple.Safari WebKitDeveloperExtrasEnabledPreferenceKey -bool true || ((failed++))
+defaults write com.apple.Safari "com.apple.Safari.ContentPageGroupIdentifier.WebKit2DeveloperExtrasEnabled" -bool true || ((failed++))
+defaults write com.apple.Safari ExtensionsEnabled -bool true || ((failed++))
+defaults write com.apple.Safari InstallExtensionUpdatesAutomatically -bool true || ((failed++))
 
 if (( failed > 0 )); then
   log "Warning: $failed default(s) failed to apply"
