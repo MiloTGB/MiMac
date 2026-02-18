@@ -80,7 +80,7 @@ MiMac/
 
 ## License
 
-MIT — milothegalaxyboy (originally forked from Seven Morris)
+MIT — milothegalaxyboy
 
 ---
 
