@@ -135,6 +135,15 @@ cask "waves-central", greedy: true
 cask "whatsapp", greedy: true
 cask "zoom", greedy: true
 
+# Apps migrated to Homebrew management
+cask "bitwarden"
+cask "canva"
+cask "libreoffice"
+cask "notunes"
+cask "obs"
+cask "pearcleaner"
+cask "scratch"
+
 # Mac App Store Apps
 #mas "Amphetamine", id: 937984704
 #mas "BetterSnapTool", id: 417375580
