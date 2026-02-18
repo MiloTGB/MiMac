@@ -42,6 +42,7 @@ Run `make all` to execute all three phases at once. Phases are independent — r
 | `make updates` | Install macOS software updates |
 | `make uninstall` | Remove symlinks, optionally rollback defaults |
 | `make dock` | Set up Dock with preferred apps |
+| `make snapshot` | Capture current machine state into project |
 | `make fix-exec` | Fix executable permissions on scripts |
 
 ## Philosophy
