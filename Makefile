@@ -17,7 +17,7 @@ setup: fix-exec
 	@"$(SCRIPTS)/setup"
 
 brew: fix-exec
-	@"$(SCRIPTS)/brew"
+	@"$(SCRIPTS)/brew-packages"
 
 post-install: fix-exec
 	@"$(SCRIPTS)/post-install"

@@ -41,7 +41,7 @@ Phases:
   --all         All phases sequentially
 
 All other flags are passed through to the relevant phase script.
-Run scripts/setup --help or scripts/brew --help for phase-specific options.
+Run scripts/setup --help or scripts/brew-packages --help for phase-specific options.
 USAGE
       exit 0
       ;;
@@ -54,7 +54,7 @@ case "${PHASE:-setup}" in
     exec "$SCRIPT_DIR/setup" "${PASSTHROUGH[@]+"${PASSTHROUGH[@]}"}"
     ;;
   brew)
-    exec "$SCRIPT_DIR/brew" "${PASSTHROUGH[@]+"${PASSTHROUGH[@]}"}"
+    exec "$SCRIPT_DIR/brew-packages" "${PASSTHROUGH[@]+"${PASSTHROUGH[@]}"}"
     ;;
   post)
     exec "$SCRIPT_DIR/post-install" "${PASSTHROUGH[@]+"${PASSTHROUGH[@]}"}"
@@ -62,7 +62,7 @@ case "${PHASE:-setup}" in
   all)
     log "Running all phases..."
     "$SCRIPT_DIR/setup" "${PASSTHROUGH[@]+"${PASSTHROUGH[@]}"}"
-    "$SCRIPT_DIR/brew" "${PASSTHROUGH[@]+"${PASSTHROUGH[@]}"}"
+    "$SCRIPT_DIR/brew-packages" "${PASSTHROUGH[@]+"${PASSTHROUGH[@]}"}"
     "$SCRIPT_DIR/post-install" "${PASSTHROUGH[@]+"${PASSTHROUGH[@]}"}"
     log "All phases complete."
     ;;
