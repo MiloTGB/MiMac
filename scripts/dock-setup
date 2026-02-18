@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# MiMac dock-setup — populate Dock with preferred apps
+#
+# Requires dockutil: brew install dockutil
+# Run via: make dock
+
+log(){ printf "[dock-setup] %s\n" "$*"; }
+
+if ! command -v dockutil >/dev/null 2>&1; then
+  log "dockutil not found. Installing..."
+  brew install dockutil || { log "Failed to install dockutil"; exit 1; }
+fi
+
+# Clear the Dock
+log "Clearing current Dock..."
+dockutil --remove all --no-restart
+
+# Apps to add (in order). Skips apps that aren't installed.
+DOCK_APPS=(
+  "/Applications/Google Chrome.app"
+  "/Applications/iMovie.app"
+  "/Applications/4K Video Downloader+.app"
+  "/Applications/Final Cut Pro.app"
+  "/Applications/WhatsApp.app"
+  "/Applications/Minecraft.app"
+  "/Applications/Canva.app"
+  "/Applications/FL Studio 2025.app"
+  "/Applications/Steam.app"
+  "/System/Applications/QuickTime Player.app"
+  "/Applications/Audio Hijack.app"
+  "/Applications/Loopback.app"
+)
+
+added=0
+skipped=0
+
+for app in "${DOCK_APPS[@]}"; do
+  name=$(basename "$app" .app)
+  if [[ -d "$app" ]]; then
+    dockutil --add "$app" --no-restart
+    log "Added: $name"
+    ((added++))
+  else
+    log "Skipped: $name (not installed)"
+    ((skipped++))
+  fi
+done
+
+# Add Applications folder
+dockutil --add /Applications --view grid --display folder --no-restart
+log "Added: Applications folder"
+
+# Restart Dock to apply
+killall Dock
+log "Dock restarted. $added app(s) added, $skipped skipped."
