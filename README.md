@@ -84,4 +84,3 @@ MIT — milothegalaxyboy (originally forked from Seven Morris)
 
 ---
 
-*Merged from [MiMac](https://github.com/MiloTGB/MiMac1) + [MiMac](https://github.com/MiloTGB/MiMac2).*
