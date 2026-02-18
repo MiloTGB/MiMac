@@ -490,8 +490,9 @@ install_brewfile() {
 
   log "Installing selected packages..."
 
-  # Run brew bundle with stdin from terminal (for any interactive prompts)
-  if $HOMEBREW bundle --file="$TEMP_BREWFILE" --verbose < /dev/tty; then
+  # Run brew bundle with stdin from terminal when available
+  if $HOMEBREW bundle --file="$TEMP_BREWFILE" --verbose < /dev/tty 2>/dev/null \
+     || $HOMEBREW bundle --file="$TEMP_BREWFILE" --verbose; then
     log "Brewfile installation completed successfully"
     return 0
   else

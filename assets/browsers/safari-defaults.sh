@@ -5,8 +5,23 @@ set -euo pipefail
 #
 # Applied by MiMac post-install. No rollback — re-run MiMac defaults
 # or reset Safari preferences manually to revert.
+#
+# On macOS Sonoma+, Safari preferences live in a sandboxed container.
+# We write to the container path directly.
 
 log(){ printf "[safari-defaults] %s\n" "$*"; }
+
+SAFARI_CONTAINER="$HOME/Library/Containers/com.apple.Safari/Data/Library/Preferences/com.apple.Safari"
+SAFARI_DOMAIN="com.apple.Safari"
+
+# Use container path if it exists, otherwise fall back to standard domain
+write_safari() {
+  if [[ -d "$HOME/Library/Containers/com.apple.Safari" ]]; then
+    defaults write "$SAFARI_CONTAINER" "$@"
+  else
+    defaults write "$SAFARI_DOMAIN" "$@"
+  fi
+}
 
 failed=0
 
@@ -15,50 +30,50 @@ failed=0
 ###############################################################################
 
 # Show full URL in Smart Search Field
-defaults write com.apple.Safari ShowFullURLInSmartSearchField -bool true || ((failed++))
+write_safari ShowFullURLInSmartSearchField -bool true || ((failed++))
 
 # Show favorites bar
-defaults write com.apple.Safari ShowFavoritesBar-v2 -bool true || ((failed++))
+write_safari ShowFavoritesBar-v2 -bool true || ((failed++))
 
 # Show status bar
-defaults write com.apple.Safari ShowOverlayStatusBar -bool true || ((failed++))
+write_safari ShowOverlayStatusBar -bool true || ((failed++))
 
 ###############################################################################
 # Privacy & Security                                                          #
 ###############################################################################
 
 # Send Do Not Track header
-defaults write com.apple.Safari SendDoNotTrackHTTPHeader -bool true || ((failed++))
+write_safari SendDoNotTrackHTTPHeader -bool true || ((failed++))
 
 # Prevent cross-site tracking
-defaults write com.apple.Safari BlockStoragePolicy -int 2 || ((failed++))
+write_safari BlockStoragePolicy -int 2 || ((failed++))
 
 # Don't auto-open "safe" downloads
-defaults write com.apple.Safari AutoOpenSafeDownloads -bool false || ((failed++))
+write_safari AutoOpenSafeDownloads -bool false || ((failed++))
 
 # Disable AutoFill for credit cards
-defaults write com.apple.Safari AutoFillCreditCardData -bool false || ((failed++))
+write_safari AutoFillCreditCardData -bool false || ((failed++))
 
 ###############################################################################
 # Developer                                                                   #
 ###############################################################################
 
 # Enable Develop menu
-defaults write com.apple.Safari IncludeDevelopMenu -bool true || ((failed++))
+write_safari IncludeDevelopMenu -bool true || ((failed++))
 
 # Enable developer extras (Web Inspector in contextual menu)
-defaults write com.apple.Safari WebKitDeveloperExtrasEnabledPreferenceKey -bool true || ((failed++))
-defaults write com.apple.Safari "com.apple.Safari.ContentPageGroupIdentifier.WebKit2DeveloperExtrasEnabled" -bool true || ((failed++))
+write_safari WebKitDeveloperExtrasEnabledPreferenceKey -bool true || ((failed++))
+write_safari "com.apple.Safari.ContentPageGroupIdentifier.WebKit2DeveloperExtrasEnabled" -bool true || ((failed++))
 
 ###############################################################################
 # Extensions                                                                  #
 ###############################################################################
 
 # Enable extensions
-defaults write com.apple.Safari ExtensionsEnabled -bool true || ((failed++))
+write_safari ExtensionsEnabled -bool true || ((failed++))
 
 # Auto-update extensions
-defaults write com.apple.Safari InstallExtensionUpdatesAutomatically -bool true || ((failed++))
+write_safari InstallExtensionUpdatesAutomatically -bool true || ((failed++))
 
 ###############################################################################
 # Summary                                                                     #
