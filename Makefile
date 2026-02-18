@@ -1,4 +1,4 @@
-SHELL := /bin/bash
+SHELL := $(shell command -v bash)
 REPO_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 SCRIPTS := scripts
 BIN_DIR   := $(REPO_ROOT)/bin
