@@ -13,8 +13,6 @@ fix-exec:
 	@find $(BIN_DIR) -type f -maxdepth 1 -not -name "*.md" -exec chmod +x {} + 2>/dev/null || true
 
 install: setup
-	@echo "Reloading shell..."
-	@exec zsh
 
 setup: fix-exec
 	@"$(SCRIPTS)/setup"
