@@ -180,12 +180,27 @@ add_login_item(){
     return 0
   fi
 
-  if osascript -e "tell application \"System Events\" to get the name of every login item" 2>/dev/null | grep -q "$app_name"; then
-    log "Login item already exists: $app_name"
-    return 0
-  fi
+  # Check/add login items via System Events (requires Automation permission)
+  local osascript_err
+  osascript_err=$(osascript -e "tell application \"System Events\" to get the name of every login item" 2>&1) && {
+    if echo "$osascript_err" | grep -q "$app_name"; then
+      log "Login item already exists: $app_name"
+      return 0
+    fi
+  } || {
+    if echo "$osascript_err" | grep -q "Not authorized"; then
+      log "Cannot manage login items (Automation permission not granted)"
+      log "  → Add $app_name manually: System Settings → General → Login Items"
+      return 0
+    fi
+    return 1
+  }
 
-  osascript -e "tell application \"System Events\" to make login item at end with properties {path:\"$app_path\", hidden:false}" >/dev/null 2>&1 || return 1
+  osascript -e "tell application \"System Events\" to make login item at end with properties {path:\"$app_path\", hidden:false}" >/dev/null 2>&1 || {
+    log "Failed to add login item: $app_name"
+    log "  → Add manually: System Settings → General → Login Items"
+    return 1
+  }
   log "Added login item: $app_name"
 }
 
