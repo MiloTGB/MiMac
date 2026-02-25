@@ -41,10 +41,10 @@ for app in "${DOCK_APPS[@]}"; do
   if [[ -d "$app" ]]; then
     dockutil --add "$app" --no-restart
     log "Added: $name"
-    ((added++))
+    ((added++)) || true
   else
     log "Skipped: $name (not installed)"
-    ((skipped++))
+    ((skipped++)) || true
   fi
 done
 

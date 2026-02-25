@@ -13,6 +13,7 @@ readonly SCRIPT_DIR REPO_ROOT
 log(){ printf "[post-install] %s\n" "$*"; }
 
 failed=0
+incr_failed(){ failed=$((failed + 1)); }
 
 # Run a defaults script, log the result
 apply_defaults(){
@@ -84,13 +85,13 @@ BROWSERS_DIR="$REPO_ROOT/assets/browsers"
 if [[ -d "/Applications/Google Chrome.app" ]]; then
   install_browser_policy "$BROWSERS_DIR/chrome-policy.json" \
     "$HOME/Library/Application Support/Google/Chrome/policies/managed" \
-    "Chrome" || ((failed++))
+    "Chrome" || incr_failed
   if [[ -f "$BROWSERS_DIR/chrome-extensions.txt" ]]; then
     if [[ -t 0 ]]; then
       printf "[post-install] Open Chrome extension URLs? [y/N]: "
       read -r answer </dev/tty
       if [[ "$answer" =~ ^[Yy]$ ]]; then
-        open_extension_urls "$BROWSERS_DIR/chrome-extensions.txt" "Chrome" || ((failed++))
+        open_extension_urls "$BROWSERS_DIR/chrome-extensions.txt" "Chrome" || incr_failed
       else
         log "Skipped Chrome extension URLs"
       fi
@@ -104,13 +105,13 @@ fi
 if [[ -d "/Applications/Brave Browser.app" ]]; then
   install_browser_policy "$BROWSERS_DIR/brave-policy.json" \
     "$HOME/Library/Application Support/BraveSoftware/Brave-Browser/policies/managed" \
-    "Brave" || ((failed++))
+    "Brave" || incr_failed
   if [[ -f "$BROWSERS_DIR/brave-extensions.txt" ]]; then
     if [[ -t 0 ]]; then
       printf "[post-install] Open Brave extension URLs? [y/N]: "
       read -r answer </dev/tty
       if [[ "$answer" =~ ^[Yy]$ ]]; then
-        open_extension_urls "$BROWSERS_DIR/brave-extensions.txt" "Brave" || ((failed++))
+        open_extension_urls "$BROWSERS_DIR/brave-extensions.txt" "Brave" || incr_failed
       else
         log "Skipped Brave extension URLs"
       fi
@@ -128,13 +129,13 @@ PREFS_DIR="$REPO_ROOT/assets/preferences"
 
 # Audio Hijack
 if [[ -d "/Applications/Audio Hijack.app" ]]; then
-  apply_defaults "$PREFS_DIR/audio-hijack-defaults.sh" "Audio Hijack" || ((failed++))
+  apply_defaults "$PREFS_DIR/audio-hijack-defaults.sh" "Audio Hijack" || incr_failed
 else
   log "Skipping Audio Hijack defaults (not installed)"
 fi
 
 # Rogue Amoeba — disable Sparkle auto-updates (managed by topgrade)
-apply_defaults "$PREFS_DIR/rogue-amoeba-updates.sh" "Rogue Amoeba updates" || ((failed++))
+apply_defaults "$PREFS_DIR/rogue-amoeba-updates.sh" "Rogue Amoeba updates" || incr_failed
 
 ###############################################################################
 # Application preferences — plist imports                                     #
@@ -162,7 +163,7 @@ import_plist(){
 }
 
 import_plist "/Applications/iTerm.app" "com.googlecode.iterm2" \
-  "$PREFS_DIR/iTerm2.plist" "iTerm2" || ((failed++))
+  "$PREFS_DIR/iTerm2.plist" "iTerm2" || incr_failed
 
 ###############################################################################
 # Login items                                                                 #
@@ -189,7 +190,7 @@ add_login_item(){
 }
 
 # Add login items for apps on this machine
-add_login_item "/Applications/noTunes.app"          || ((failed++))
+add_login_item "/Applications/noTunes.app"          || incr_failed
 
 ###############################################################################
 # Summary                                                                     #
