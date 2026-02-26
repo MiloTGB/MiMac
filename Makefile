@@ -3,7 +3,7 @@ REPO_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 SCRIPTS := scripts
 BIN_DIR   := $(REPO_ROOT)/bin
 
-.PHONY: all install fix-exec setup brew post-install tools dotfiles defaults trackpad uninstall update updates harden status doctor dock snapshot
+.PHONY: all install fix-exec setup brew post-install tools dotfiles defaults trackpad uninstall update updates harden status doctor dock
 
 all: setup brew post-install
 
@@ -55,6 +55,3 @@ doctor:
 
 dock:
 	@"$(SCRIPTS)/dock-setup"
-
-snapshot:
-	@"$(SCRIPTS)/snapshot"

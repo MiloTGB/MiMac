@@ -36,7 +36,6 @@ Run `make all` to execute all three phases at once. Phases are independent — r
 | `make defaults` | Apply macOS defaults only |
 | `make trackpad` | Apply defaults including trackpad gestures |
 | `make dock` | Set up Dock with preferred apps |
-| `make snapshot` | Capture current machine state into project |
 | `make harden` | Security hardening (Touch ID sudo, firewall) |
 | `make status` | Show installation status |
 | `make doctor` | Run `brew doctor` |
@@ -49,11 +48,11 @@ Run `make all` to execute all three phases at once. Phases are independent — r
 
 ### Step 1: Snapshot Your Current Machine
 
-Before leaving your old machine, capture its current state:
+Before leaving your old machine, capture its current state using the `snapshot` tool (lives at `~/bin/snapshot`, not in the repo):
 
 ```bash
-cd ~/Projects/MiMac    # or wherever your dev copy lives
-make snapshot
+snapshot
+cd ~/Projects/MiMac-dev
 git push
 ```
 
@@ -131,7 +130,6 @@ MiMac/
     ├── brew-packages   # Phase 2
     ├── post-install    # Phase 3
     ├── dock-setup      # Dock layout
-    ├── snapshot        # Capture machine state
     ├── status          # Installation status
     ├── defaults.sh     # macOS defaults
     ├── hardening.sh    # Security hardening
