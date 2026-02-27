@@ -26,4 +26,4 @@ make install
 echo "🩺 Running doctor…"
 make doctor || true
 
-echo "✅ Dev test complete. Fresh MiMac installed from GitHub."
+echo "✅ Dev test complete. Fresh MiMac installed from local project."

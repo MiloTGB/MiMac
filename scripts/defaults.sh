@@ -24,9 +24,13 @@ if ! mkdir -p "$ROLL_DIR"; then
   exit 1
 fi
 
-if ! printf '#!/usr/bin/env bash\n' > "$ROLLBACK" || ! chmod +x "$ROLLBACK"; then
-  echo "Error: Failed to initialize rollback script: $ROLLBACK" >&2
-  exit 1
+# Initialize rollback script if it doesn't exist; preserve existing content
+# (setup may have already written login-window-message rollback entries)
+if [[ ! -f "$ROLLBACK" ]]; then
+  if ! printf '#!/usr/bin/env bash\n' > "$ROLLBACK" || ! chmod +x "$ROLLBACK"; then
+    echo "Error: Failed to initialize rollback script: $ROLLBACK" >&2
+    exit 1
+  fi
 fi
 
 log(){ printf "[defaults] %s\n" "$*"; }

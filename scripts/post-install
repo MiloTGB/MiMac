@@ -135,7 +135,11 @@ else
 fi
 
 # Rogue Amoeba — disable Sparkle auto-updates (managed by topgrade)
-apply_defaults "$PREFS_DIR/rogue-amoeba-updates.sh" "Rogue Amoeba updates" || incr_failed
+if [[ -d "/Applications/Audio Hijack.app" ]] || [[ -d "/Applications/Loopback.app" ]] || [[ -d "/Applications/SoundSource.app" ]]; then
+  apply_defaults "$PREFS_DIR/rogue-amoeba-updates.sh" "Rogue Amoeba updates" || incr_failed
+else
+  log "Skipping Rogue Amoeba update defaults (no RA apps installed)"
+fi
 
 ###############################################################################
 # Application preferences — plist imports                                     #

@@ -12,16 +12,16 @@ TARGETS=(
   "$HOME/bin"
 )
 
-echo "🔧 Ensuring executable bits on MiMac scripts…"
+echo "[fix-exec] Ensuring executable bits on MiMac scripts..."
 for dir in "${TARGETS[@]}"; do
   if [ -d "$dir" ]; then
     # Only chmod top-level files in each target dir
     find "$dir" -maxdepth 1 -type f -print0 2>/dev/null \
       | xargs -0 chmod +x 2>/dev/null || true
-    echo "✓ Fixed executables in: $dir"
+    echo "[fix-exec] Fixed executables in: $dir"
   else
-    echo "⚠️ Skipping missing directory: $dir"
+    echo "[fix-exec] Skipping missing directory: $dir" >&2
   fi
 done
 
-echo "✅ Done."
+echo "[fix-exec] Done."

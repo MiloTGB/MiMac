@@ -51,6 +51,7 @@ status:
 	@"$(SCRIPTS)/status"
 
 doctor:
+	@"$(SCRIPTS)/doctor"
 	@brew doctor
 
 dock:

@@ -5,10 +5,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 MANIFEST="$REPO_ROOT/.install-manifest"
 
-echo "🧾 Generating install manifest → $MANIFEST"
+echo "[manifest] Generating install manifest → $MANIFEST"
 
 DOTFILES=(.zshrc .zshenv .zprofile .aliases)
-CANDIDATE_BIN_DIRS=("$HOME/.local/bin" "$HOME/bin")
+CANDIDATE_BIN_DIRS=("$HOME/bin")
 CONFIG_DIRS=("$HOME/.config/MiMac" "$HOME/.MiMac")
 
 resolve_realpath() {
@@ -48,4 +48,4 @@ for d in "${CONFIG_DIRS[@]}"; do
   [[ -e "$d" ]] && echo "$d" >>"$MANIFEST"
 done
 
-echo "✅ Manifest written."
+echo "[manifest] Manifest written."

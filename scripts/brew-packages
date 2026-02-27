@@ -161,45 +161,40 @@ declare -A FORMULA_DESCRIPTIONS=(
   [bash-completion@2]="Programmable tab completion for Bash 4.1+"
   [bat]="Cat clone with syntax highlighting and Git integration"
   [coreutils]="GNU core utilities - Enhanced versions of basic Unix tools"
+  [dockutil]="Command-line tool for managing Dock items"
   [fastfetch]="Fast system information display tool"
   [gh]="GitHub CLI - Official command-line tool for GitHub"
   [git]="Distributed version control system"
   [gnupg]="GNU Privacy Guard - Encryption and signing tool"
+  [gum]="TUI toolkit for interactive shell scripts"
   [htop]="Interactive process viewer and system monitor"
   [lsd]="Modern ls replacement with colors and icons"
+  [lzip]="Lossless data compressor based on LZMA"
   [moreutils]="Collection of useful Unix utilities (sponge, vidir, etc.)"
+  [most]="Powerful paging program (alternative to less)"
   [nano]="Simple terminal-based text editor"
   [nanorc]="Syntax highlighting configuration for nano"
   [ncdu]="Disk usage analyzer with ncurses interface"
   [nethogs]="Monitor network usage per process"
   [nmap]="Network exploration and security auditing tool"
+  [node@22]="Node.js 22 LTS JavaScript runtime"
   [openssh]="OpenSSH client and server for secure remote access"
-  [paperkey]="Extract secret keys from GnuPG keyrings for backup"
-  [pinentry-mac]="PIN entry dialog for GnuPG on macOS"
+  [osx-cpu-temp]="Display CPU temperature from the command line"
   [pwgen]="Password generator utility"
-  [qemu]="Generic machine emulator and virtualizer"
-  [qrencode]="QR Code generator from text strings"
-  [rclone]="Cloud storage sync tool"
+  [speedtest-cli]="Command-line interface for testing internet bandwidth"
   [tealdeer]="Fast tldr client - Simplified man pages"
   [topgrade]="Upgrade everything - Updates all package managers at once"
-  [trash]="Move files to macOS Trash instead of deleting"
-  [watch]="Execute a program periodically and display output"
+  [zip]="Compression and file packaging utility"
   [zsh]="Z shell - Advanced shell with many features"
+  [openjdk]="OpenJDK - Open-source Java Development Kit"
+  [pipx]="Install and run Python apps in isolated environments"
+  [pyenv]="Python version management tool"
+  [python@3.12]="Python 3.12 programming language interpreter"
   [ripgrep]="Fast text search tool (rg)"
   [shellcheck]="Static analysis tool for shell scripts"
   [shfmt]="Shell formatter - Format shell scripts automatically"
-  [python@3.12]="Python 3.12 programming language interpreter"
-  [pipx]="Install and run Python apps in isolated environments"
-  [pyenv]="Python version management tool"
-  [openjdk]="OpenJDK - Open-source Java Development Kit"
   [ffmpeg]="Complete solution for audio/video conversion"
-  [chromaprint]="Audio fingerprinting library (used by AcoustID)"
-  [whisper-cpp]="Speech-to-text engine (C/C++ port of OpenAI Whisper)"
-  [yt-dlp]="Video/audio downloader from YouTube and other sites"
-  [mac-cleanup-py]="Cleanup script for macOS (caches, logs, trash)"
-  [mkdocs]="Static site generator for project documentation"
-  [pandoc]="Universal document converter"
-  [wget]="Internet file retriever"
+  [sox]="Sound eXchange - Swiss army knife for audio manipulation"
 )
 
 # Get description for a formula
@@ -229,41 +224,39 @@ ensure_gum() {
 # Sets selected items in selected_array (associative array): selected[name]=1 if selected
 interactive_selection() {
   local type="$1"  # "cask" or "formula"
-  local items_var="$2"  # name of array variable containing items
-  local selected_var="$3"  # name of associative array to store selections
-  
+  local -n _items_ref="$2"       # array containing items
+  local -n _selected_ref="$3"    # associative array to store selections
+
   # Only show selection if we have a TTY
   if [[ ! -t 0 ]]; then
     return 0
   fi
-  
-  # Get item count via indirect expansion
-  local eval_total
-  eval "eval_total=\${#${items_var}[@]}"
-  if (( eval_total == 0 )); then
+
+  local total=${#_items_ref[@]}
+  if (( total == 0 )); then
     return 0
   fi
-  
+
   local type_label=""
   if [[ "$type" == "cask" ]]; then
     type_label="Casks"
   elif [[ "$type" == "formula" ]]; then
     type_label="Formulae"
   fi
-  
+
   # Separate installed from not-installed
   local i item_data name
   local -a not_installed_names=()
   local -a not_installed_labels=()
   local skipped=0
-  
-  for (( i=0; i<eval_total; i++ )); do
-    eval "item_data=\${${items_var}[$i]}"
+
+  for (( i=0; i<total; i++ )); do
+    item_data="${_items_ref[$i]}"
     name="${item_data%%|*}"
-    
+
     # Default to unselected
-    eval "${selected_var}[\"\$name\"]=0"
-    
+    _selected_ref["$name"]=0
+
     if [[ "$item_data" == *"|installed" ]]; then
       ((skipped++)) || true
     else
@@ -314,10 +307,10 @@ interactive_selection() {
   if [[ -n "$gum_output" ]]; then
     while IFS= read -r selected_line; do
       local selected_name="${selected_line%% — *}"
-      eval "${selected_var}[\"\$selected_name\"]=1"
+      _selected_ref["$selected_name"]=1
     done <<< "$gum_output"
   fi
-  
+
   return 0
 }
 
