@@ -1,6 +1,6 @@
 MIMAC := $(HOME)/Projects/MiMac-dev
 
-.PHONY: sync snapshot-prefs pull-prefs picker manual help
+.PHONY: status sync snapshot-prefs pull-prefs picker manual help
 
 help: ## Show available make commands
 	@echo ""
@@ -13,6 +13,9 @@ help: ## Show available make commands
 	@echo "  \033[1mFrom ~/Projects/MiMac-dev/\033[0m"
 	@$(MAKE) -C $(MIMAC) help --no-print-directory 2>/dev/null
 	@echo ""
+
+status: ## Show installation status
+	@$(MAKE) -C $(MIMAC) status --no-print-directory
 
 sync: ## Sync installed Homebrew packages into the Brewfile  (pass ARGS=-c to commit, ARGS=-n for dry run)
 	@$(MAKE) -C $(MIMAC) sync ARGS="$(ARGS)"
