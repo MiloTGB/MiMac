@@ -1,6 +1,8 @@
 # MiMac — macOS bootstrap
 
-Opinionated, idempotent macOS setup in three phases.
+Personal, opinionated macOS bootstrap tailored to my workflow and toolset. Idempotent setup in three phases.
+
+**[Full workflow manual →](https://milotgb.github.io/MiMac/)**
 
 ## Quick Start
 
@@ -31,6 +33,9 @@ Run `make all` to execute all three phases at once. Phases are independent — r
 | `make brew` | Phase 2 (Homebrew) |
 | `make post-install` | Phase 3 (app config) |
 | `make all` | All three phases |
+| `make sync` | Snapshot installed Homebrew packages into the Brewfile |
+| `make snapshot-prefs` | Export app preferences and push to mimac-prefs |
+| `make pull-prefs` | Clone or pull app preferences from mimac-prefs |
 | `make tools` | Link scripts into `~/bin` only |
 | `make dotfiles` | Symlink dotfiles only |
 | `make defaults` | Apply macOS defaults only |
@@ -38,11 +43,14 @@ Run `make all` to execute all three phases at once. Phases are independent — r
 | `make dock` | Set up Dock with preferred apps |
 | `make harden` | Security hardening (Touch ID sudo, firewall) |
 | `make status` | Show installation status |
-| `make doctor` | Run `brew doctor` |
+| `make doctor` | Check `~/bin` is on PATH; `make doctor --fix` adds it to `.zshrc` |
 | `make update` | Update via topgrade (or brew) |
 | `make updates` | Install macOS software updates |
+| `make picker` | Build the mimac-picker TUI binary |
+| `make manual` | Regenerate `docs/index.html` from `docs/manual.md` |
 | `make uninstall` | Remove symlinks, optionally rollback defaults |
 | `make fix-exec` | Fix executable permissions on scripts |
+| `make help` | Show all available make commands |
 
 ## Migrating to a New Machine
 
@@ -118,17 +126,26 @@ MiMac/
 ├── Makefile            # All targets
 ├── Brewfile            # Homebrew packages
 ├── dotfiles/           # Symlinked to ~/
+│   └── Makefile        # ~/Makefile proxy for sync/prefs/picker/manual
 ├── bin/                # Extra scripts linked to ~/bin
 ├── assets/             # App configs, browser policies
 │   ├── browsers/
 │   ├── preferences/
 │   └── topgrade.toml
+├── tools/
+│   └── picker/         # mimac-picker TUI (Go/Bubble Tea)
+├── docs/
+│   ├── manual.md       # Workflow manual source
+│   └── assets/         # CSS for generated HTML
 └── scripts/
     ├── lib.sh          # Shared helpers
     ├── install         # Unified entrypoint (dispatches to phases)
     ├── setup           # Phase 1
     ├── brew-packages   # Phase 2
     ├── post-install    # Phase 3
+    ├── sync            # Brewfile sync
+    ├── snapshot-prefs  # Export app preferences
+    ├── pull-prefs      # Pull app preferences
     ├── dock-setup      # Dock layout
     ├── status          # Installation status
     ├── defaults.sh     # macOS defaults
