@@ -54,8 +54,5 @@ assets/browsers/*-extensions.txt
 tools/picker/mimac-picker
 bin/mimac-picker
 
-# Generated docs
-docs/index.html
-
 # Homebrew
 Brewfile.lock.json
