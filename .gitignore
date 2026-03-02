@@ -50,5 +50,12 @@ MANIFEST.json
 # Browser extension lists (user-specific)
 assets/browsers/*-extensions.txt
 
+# Built binaries
+tools/picker/mimac-picker
+bin/mimac-picker
+
+# Generated docs
+docs/index.html
+
 # Homebrew
 Brewfile.lock.json

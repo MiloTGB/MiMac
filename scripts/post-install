@@ -148,6 +148,29 @@ else
 fi
 
 ###############################################################################
+# Preferences auto-pull                                                       #
+###############################################################################
+
+PREFS_REPO="git@github.com:MiloTGB/mimac-prefs.git"
+LOCAL_PREFS_DIR="$HOME/.mimac/preferences"
+
+if [[ ! -d "$LOCAL_PREFS_DIR/.git" ]]; then
+  # Check if SSH is authenticated to GitHub
+  if ssh -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
+    log "Cloning mimac-prefs..."
+    mkdir -p "$(dirname "$LOCAL_PREFS_DIR")"
+    git clone "$PREFS_REPO" "$LOCAL_PREFS_DIR" 2>/dev/null || {
+      log "Warning: failed to clone mimac-prefs (SSH key may not have access)"
+    }
+  else
+    log "Skipping mimac-prefs auto-pull (SSH not authenticated with GitHub)"
+    log "  → Run: make pull-prefs (after adding SSH key to GitHub)"
+  fi
+else
+  log "Preferences repo already present at $LOCAL_PREFS_DIR"
+fi
+
+###############################################################################
 # Application preferences — plist imports                                     #
 ###############################################################################
 
@@ -173,7 +196,86 @@ import_plist(){
 }
 
 import_plist "/Applications/iTerm.app" "com.googlecode.iterm2" \
-  "$PREFS_DIR/iTerm2.plist" "iTerm2" || incr_failed
+  "$LOCAL_PREFS_DIR/iTerm2.plist" "iTerm2" || incr_failed
+
+import_plist "/Applications/Audio Hijack.app" "com.rogueamoeba.audiohijack" \
+  "$LOCAL_PREFS_DIR/AudioHijack.plist" "Audio Hijack" || incr_failed
+
+import_plist "/Applications/Loopback.app" "com.rogueamoeba.Loopback" \
+  "$LOCAL_PREFS_DIR/Loopback.plist" "Loopback" || incr_failed
+
+import_plist "/Applications/SoundSource.app" "com.rogueamoeba.soundsource" \
+  "$LOCAL_PREFS_DIR/SoundSource.plist" "SoundSource" || incr_failed
+
+import_plist "/Applications/BetterSnapTool.app" "com.hegenberg.BetterSnapTool" \
+  "$LOCAL_PREFS_DIR/BetterSnapTool.plist" "BetterSnapTool" || incr_failed
+
+import_plist "/Applications/Ice.app" "com.jordanbaird.Ice" \
+  "$LOCAL_PREFS_DIR/Ice.plist" "Ice" || incr_failed
+
+import_plist "/Applications/Raycast.app" "com.raycast.macos" \
+  "$LOCAL_PREFS_DIR/Raycast.plist" "Raycast" || incr_failed
+
+import_plist "/Applications/Stats.app" "eu.exelban.Stats" \
+  "$LOCAL_PREFS_DIR/Stats.plist" "Stats" || incr_failed
+
+import_plist "/Applications/Farrago.app" "com.rogueamoeba.farrago" \
+  "$LOCAL_PREFS_DIR/Farrago.plist" "Farrago" || incr_failed
+
+import_plist "/Applications/Piezo.app" "com.rogueamoeba.Piezo" \
+  "$LOCAL_PREFS_DIR/Piezo.plist" "Piezo" || incr_failed
+
+import_plist "/Applications/Typora.app" "abnerworks.Typora" \
+  "$LOCAL_PREFS_DIR/Typora.plist" "Typora" || incr_failed
+
+import_plist "/Applications/Hot.app" "com.xs-labs.Hot" \
+  "$LOCAL_PREFS_DIR/Hot.plist" "Hot" || incr_failed
+
+import_plist "/Applications/Keka.app" "com.aone.keka" \
+  "$LOCAL_PREFS_DIR/Keka.plist" "Keka" || incr_failed
+
+import_plist "/Applications/TimeMachineEditor.app" "com.tclementdev.timemachineeditor.application" \
+  "$LOCAL_PREFS_DIR/TimeMachineEditor.plist" "TimeMachineEditor" || incr_failed
+
+import_plist "/Applications/MacWhisper.app" "com.goodsnooze.MacWhisper" \
+  "$LOCAL_PREFS_DIR/MacWhisper.plist" "MacWhisper" || incr_failed
+
+###############################################################################
+# Application Support restore                                                #
+###############################################################################
+
+restore_app_support(){
+  local app_name="$1" src_subdir="$2"
+  shift 2
+  local files=("$@")
+  local src_dir="$LOCAL_PREFS_DIR/app-support/$src_subdir"
+  local dest_dir="$HOME/Library/Application Support/$app_name"
+
+  if [[ ! -d "$src_dir" ]]; then
+    log "Skipping $app_name app support restore (no backup found)"
+    return 0
+  fi
+
+  mkdir -p "$dest_dir"
+  local restored=0
+  for file in "${files[@]}"; do
+    if [[ -f "$src_dir/$file" ]] && [[ ! -f "$dest_dir/$file" ]]; then
+      cp "$src_dir/$file" "$dest_dir/$file"
+      restored=$(( restored + 1 ))
+    fi
+  done
+  if (( restored > 0 )); then
+    log "Restored $app_name app support ($restored file(s))"
+  else
+    log "$app_name app support already present — skipping restore"
+  fi
+}
+
+restore_app_support "Loopback" "Loopback" \
+  "Devices.plist" "RecentApps.plist"
+
+restore_app_support "SoundSource" "SoundSource" \
+  "Presets.plist" "CustomPresets.plist" "Sources.plist" "Models.plist"
 
 ###############################################################################
 # Login items                                                                 #
@@ -216,6 +318,8 @@ add_login_item(){
 
 # Add login items for apps on this machine
 add_login_item "/Applications/noTunes.app"          || incr_failed
+add_login_item "/Applications/SoundSource.app"      || incr_failed
+add_login_item "/Applications/Loopback.app"         || incr_failed
 
 ###############################################################################
 # Summary                                                                     #

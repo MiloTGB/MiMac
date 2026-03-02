@@ -1,0 +1,437 @@
+---
+title: "MiMac — macOS Bootstrap Manual"
+subtitle: "Workflow guide for managing, maintaining, and migrating your Mac setup"
+date: "[github.com/MiloTGB/MiMac](https://github.com/MiloTGB/MiMac)"
+---
+
+# Overview
+
+**MiMac** is a personal, opinionated macOS bootstrap system tailored to my workflow and toolset. It automates the configuration of a Mac from a clean install, managing the shell environment, dotfiles, macOS system preferences, Homebrew packages, app settings, login items, and personal app preferences.
+
+**Key repositories:**
+
+| Repo | Location | Purpose |
+|---|---|---|
+| `MiloTGB/MiMac` | `~/Projects/MiMac-dev/` | Public bootstrap repo |
+| `MiloTGB/mimac-prefs` | `~/.mimac/preferences/` | Private app preferences |
+
+The two-repo split keeps personal preference data (iTerm2 profiles, Audio Hijack settings, etc.) out of the public repo while still making them fully portable across machines.
+
+As long as both repos are kept current, the entire setup can be fully restored on a new machine from scratch — nothing needs to be manually transferred. The repos are the source of truth.
+
+> **Adapting for your own use:** This project is built around a specific setup. If you fork it, you'll need to replace `MiloTGB/mimac-prefs` with your own private preferences repo, swap in your own dotfiles, and review the app lists in `scripts/post-install` and `scripts/snapshot-prefs` to match your environment.
+
+---
+
+# How It Works — The Three Phases
+
+## Phase 1 — Setup (`make setup`)
+
+Script: `scripts/setup`
+
+Sets up the foundational shell environment on a new or existing machine.
+
+**What it does:**
+
+- Installs Xcode Command Line Tools if not present
+- Links everything in `dotfiles/` into `$HOME` as symlinks (with automatic backups of any existing files)
+
+**Managed dotfiles:**
+
+| File | Purpose |
+|---|---|
+| `.aliases` | Shell aliases |
+| `.gitconfig` | Git configuration |
+| `.hushlogin` | Suppresses "Last login" terminal message |
+| `.zprofile` | Zsh login shell profile |
+| `.zshenv` | Zsh environment variables |
+| `.zshrc` | Zsh interactive shell config |
+| `Makefile` | MiMac commands available from `~/` |
+- Links `scripts/` and `bin/` into `~/bin` so tools are on your PATH
+- Applies macOS system preferences via `scripts/defaults.sh`
+- Sets Zsh as the login shell
+- Generates a rollback script at `~/.mimac/defaults-rollback.sh`
+
+**Options:**
+
+```
+make setup --only dotfiles    # Link dotfiles only
+make setup --only tools       # Link scripts/bin only
+make setup --only defaults    # Apply macOS defaults only
+make setup --dry-run          # Preview changes without applying
+make dotfiles                 # Shorthand for --only dotfiles
+make tools                    # Shorthand for --only tools
+make defaults                 # Shorthand for --only defaults
+make trackpad                 # Apply defaults including trackpad settings
+```
+
+## Phase 2 — Homebrew (`make brew`)
+
+Script: `scripts/brew-packages`
+
+Installs Homebrew and all packages listed in the `Brewfile`.
+
+**What it does:**
+
+- Installs Homebrew if not present
+- Runs `brew bundle install` from the Brewfile
+- Presents interactive prompts for packages that are new (not previously installed)
+- Uses the mimac-picker TUI or `gum` to let you select which packages to accept
+
+## Phase 3 — Post-Install (`make post-install`)
+
+Script: `scripts/post-install`
+
+Configures installed apps. Must be run after Phase 2.
+
+**What it does:**
+
+- **Topgrade:** Links `assets/topgrade.toml` to `~/.config/topgrade.toml`
+- **Browsers:** Applies Chrome/Brave managed policies; opens extension install URLs on request
+- **App defaults:** Applies `defaults write` settings for Audio Hijack, Rogue Amoeba update settings
+- **Preferences auto-pull:** If `~/.mimac/preferences/` is absent and SSH is authenticated to GitHub, automatically clones `mimac-prefs`
+- **Plist imports:** Imports personal preference plists; skips any app that already has a preferences file (non-destructive)
+- **App Support restore:** Restores Loopback and SoundSource configuration files (non-destructive)
+- **Login items:** Registers login items for installed apps
+
+**Managed app preferences:**
+
+| App | Plist imported |
+|---|---|
+| iTerm2 | ✓ |
+| Loopback | ✓ + App Support files |
+| SoundSource | ✓ + App Support files |
+| Audio Hijack | ✓ |
+| BetterSnapTool | ✓ |
+| Ice | ✓ |
+| Raycast | ✓ |
+| Stats | ✓ |
+| Farrago | ✓ |
+| Piezo | ✓ |
+| Typora | ✓ |
+| Hot | ✓ |
+| Keka | ✓ |
+| TimeMachineEditor | ✓ |
+| MacWhisper | ✓ |
+
+## Full Install
+
+```bash
+make all        # Runs setup + brew + post-install in sequence
+exec zsh        # Reload shell after setup
+```
+
+---
+
+# Day-to-Day Workflow
+
+## Keeping the Brewfile Current (`make sync`)
+
+Whenever you install a new Homebrew package, run `make sync` to record it in the Brewfile.
+
+```bash
+make sync             # Interactive — opens mimac-picker TUI to select packages
+make sync ARGS=-n     # Dry run — show what would be added, make no changes
+make sync ARGS=-c     # Auto-commit the Brewfile after updating
+```
+
+**How sync works:**
+
+1. Reads the Brewfile to build a list of already-tracked packages
+2. Runs `brew leaves` (top-level formulae) and `brew list --cask` to see what's installed
+3. Computes the diff — packages installed but not yet in the Brewfile
+4. Opens **mimac-picker** TUI: use `Space` to select packages, `Enter` to confirm, `q` to quit
+5. For each selected formula, prompts via `gum` to choose which Brewfile section to add it to
+6. Casks are auto-assigned to the existing cask section
+7. Inserts each entry alphabetically within its section
+
+> **Note:** The mimac-picker binary lives at `bin/mimac-picker` (gitignored, platform-specific).
+> If it's missing, rebuild it first with `make picker`.
+
+## Keeping App Preferences Current (`make snapshot-prefs`)
+
+After configuring an app, run `make snapshot-prefs` to capture and push the preferences.
+
+```bash
+make snapshot-prefs
+```
+
+**How snapshot-prefs works:**
+
+1. Exports the preference plist for each of the 15 managed apps using `defaults export`
+2. Copies Loopback and SoundSource Application Support files
+3. Commits all changes to `~/.mimac/preferences/` with a timestamped message
+4. Pushes to `MiloTGB/mimac-prefs` on GitHub
+
+Snapshots are idempotent — if nothing changed, it reports "No changes to push."
+
+## Pulling App Preferences (`make pull-prefs`)
+
+```bash
+make pull-prefs
+```
+
+Clones `mimac-prefs` into `~/.mimac/preferences/` if it doesn't exist, or fast-forward pulls if it does.
+
+> **Note:** `make post-install` does this automatically if `~/.mimac/preferences/` is absent and your SSH key is authenticated with GitHub.
+
+## Updating This Manual (`make manual`)
+
+The manual source lives in the repo at `docs/manual.md`. After editing it, regenerate the HTML and commit:
+
+```bash
+# Edit the source
+$EDITOR ~/Projects/MiMac-dev/docs/manual.md
+
+# Regenerate the site HTML (requires pandoc)
+make manual
+
+# Commit and push both files
+cd ~/Projects/MiMac-dev
+git add docs/manual.md docs/index.html
+git commit -m "docs: update manual"
+git push
+```
+
+> **Note:** Only edit `docs/manual.md` — never edit `docs/index.html` directly, as it is overwritten by `make manual`.
+
+---
+
+# Before Migrating to a New Machine
+
+Run these steps on the **old machine** before you transfer.
+
+**1. Sync the Brewfile**
+
+```bash
+make sync ARGS=-c
+```
+
+Captures any packages installed since the last sync and commits the updated Brewfile.
+
+**2. Snapshot app preferences**
+
+```bash
+make snapshot-prefs
+```
+
+Exports and pushes all app preference plists plus Application Support files. Verify the push succeeded — you should see "Pushed to git@github.com:MiloTGB/mimac-prefs.git" in the output.
+
+**3. Push any pending MiMac-dev changes**
+
+```bash
+cd ~/Projects/MiMac-dev
+git status
+git push
+```
+
+**4. Verify SSH authentication**
+
+```bash
+ssh -T git@github.com
+# Expected: Hi MiloTGB! You've successfully authenticated...
+```
+
+The new machine needs your SSH key to auto-pull mimac-prefs during `make post-install`.
+
+**5. Note anything not covered by MiMac**
+
+Write down any apps, license keys, or configurations not yet automated:
+
+- App Store apps (manually reinstall from Purchases)
+- Software licenses (export from your license manager)
+- Any manual system settings not captured by `defaults write`
+- VPN configurations, certificates, etc.
+
+---
+
+# Setting Up a New Machine
+
+## Prerequisites
+
+- macOS 15 or later
+- Active internet connection
+- Your GitHub SSH key (or ability to create and add one)
+
+## Step 1 — Clone MiMac
+
+**If SSH is already set up:**
+
+```bash
+mkdir -p ~/Projects
+git clone git@github.com:MiloTGB/MiMac.git ~/Projects/MiMac-dev
+```
+
+**If SSH is not yet configured** (fresh machine), clone over HTTPS first:
+
+```bash
+mkdir -p ~/Projects
+git clone https://github.com/MiloTGB/MiMac.git ~/Projects/MiMac-dev
+```
+
+Then generate and add your SSH key to GitHub before continuing, so mimac-prefs can be pulled automatically in Phase 3.
+
+## Step 2 — Phase 1: Shell & Dotfiles
+
+```bash
+cd ~/Projects/MiMac-dev
+make setup
+exec zsh        # Reload shell to pick up dotfiles and ~/bin
+```
+
+After this step, the shell is configured, dotfiles are linked, and macOS system preferences are applied.
+
+## Step 3 — (If needed) Add SSH Key to GitHub
+
+If you cloned over HTTPS, add your SSH key now before running Phase 3:
+
+```bash
+# Generate a new key
+ssh-keygen -t ed25519 -C "your-email@example.com"
+
+# Copy the public key
+cat ~/.ssh/id_ed25519.pub | pbcopy
+
+# Add to GitHub: github.com → Settings → SSH and GPG keys → New SSH key
+# Then verify:
+ssh -T git@github.com
+```
+
+## Step 4 — Phase 2: Homebrew
+
+```bash
+make brew
+```
+
+Installs Homebrew (if needed) and all packages from the Brewfile. This step takes the most time depending on how many packages are in the Brewfile.
+
+## Step 5 — Phase 3: App Configuration
+
+```bash
+make post-install
+```
+
+This configures apps, imports your personal preferences, and sets up login items. If SSH is authenticated, it automatically pulls your preferences from `mimac-prefs`.
+
+If `~/.mimac/preferences/` is not populated (SSH wasn't ready), run manually:
+
+```bash
+make pull-prefs
+make post-install   # Re-run to import plists
+```
+
+## Step 6 — Build mimac-picker
+
+```bash
+make picker
+```
+
+The mimac-picker binary is platform-specific and not stored in git. Build it once after installation. It is required by `make sync`.
+
+## Step 7 — Verify the Installation
+
+```bash
+make status     # Check dotfiles, tools, shell, Homebrew, Brewfile packages
+make doctor     # Run full diagnostics
+```
+
+Review the output and address any items marked with warnings or errors.
+
+## Full One-Command Install
+
+```bash
+cd ~/Projects/MiMac-dev
+make all
+exec zsh
+make picker
+```
+
+---
+
+# Command Reference
+
+## Commands Available from Anywhere (`~/Makefile`)
+
+`~/Makefile` is deployed automatically by `make setup` via `dotfiles/`. Running `make help` from `~/` shows all commands from both this file and `MiMac-dev/`.
+
+| Command | Description |
+|---|---|
+| `make sync` | Sync installed Homebrew packages into the Brewfile |
+| `make sync ARGS=-c` | Sync and auto-commit the Brewfile |
+| `make sync ARGS=-n` | Dry run — preview additions without modifying the Brewfile |
+| `make snapshot-prefs` | Export app preferences and push to mimac-prefs |
+| `make pull-prefs` | Clone or pull app preferences from mimac-prefs |
+| `make picker` | Build the mimac-picker TUI binary |
+| `make help` | Show all available commands from `~/` and `MiMac-dev/` |
+
+## Commands from `~/Projects/MiMac-dev/`
+
+| Command | Description |
+|---|---|
+| `make all` | Full install: setup + brew + post-install |
+| `make setup` / `make install` | Phase 1: shell, dotfiles, macOS defaults |
+| `make brew` | Phase 2: Homebrew packages and casks |
+| `make post-install` | Phase 3: app configs and login items |
+| `make dotfiles` | Link dotfiles only |
+| `make tools` | Install CLI tools only |
+| `make defaults` | Apply macOS defaults only |
+| `make trackpad` | Apply macOS defaults including trackpad settings |
+| `make harden` | Apply macOS security hardening |
+| `make update` | Upgrade all packages (topgrade or brew upgrade) |
+| `make updates` | Run macOS software updates (`softwareupdate -ia`) |
+| `make uninstall` | Remove symlinks and undo setup |
+| `make status` | Show installation status |
+| `make doctor` | Check `~/bin` is on PATH; `--fix` adds it to `.zshrc` |
+| `make fix-exec` | Make all scripts and bin files executable |
+| `make help` | Show all available commands |
+
+---
+
+# What `make status` Checks
+
+Running `make status` gives a quick health check of the entire installation:
+
+- **Dotfiles** — Which files are symlinked into `~/` and which are missing
+- **Tools** — Which scripts/bin symlinks are live in `~/bin` and which are broken
+- **macOS Defaults** — Whether defaults have been applied (rollback script present)
+- **Security Hardening** — Whether hardening has been applied
+- **Backups** — Number of dotfile backups in `~/.mimac/backups/`
+- **Shell** — Current login shell (should be Zsh)
+- **PATH** — Whether `~/bin` is on the PATH
+- **Homebrew** — Version installed
+- **Brewfile packages** — Each formula and cask: installed or missing
+
+---
+
+# State Files
+
+MiMac writes runtime state to `~/.mimac/` (gitignored):
+
+| File / Directory | Purpose |
+|---|---|
+| `~/.mimac/preferences/` | Cloned from `MiloTGB/mimac-prefs`; app plists + App Support files |
+| `~/.mimac/backups/` | Timestamped backups of dotfiles that were replaced during setup |
+| `~/.mimac/defaults-rollback.sh` | Shell script to undo all `defaults write` changes |
+| `~/.mimac/hardening-rollback.sh` | Shell script to undo security hardening |
+
+To undo macOS defaults applied by MiMac:
+
+```bash
+bash ~/.mimac/defaults-rollback.sh
+```
+
+---
+
+# Troubleshooting
+
+| Problem | Solution |
+|---|---|
+| `make setup` fails at Xcode CLT | Run `xcode-select --install`, wait for the GUI install dialog to complete, then re-run |
+| Dotfile conflict ("file exists" warning) | Backup auto-created in `~/.mimac/backups/`; resolve manually then re-run |
+| post-install skips plist imports | SSH key not authenticated; run `make pull-prefs` after adding key to GitHub |
+| mimac-picker not rendering | Rebuild the binary: `make picker` |
+| `~/bin` not on PATH | Run `make doctor --fix` — automatically adds `~/bin` to PATH in `.zshrc` |
+| Brewfile entry shows missing | Package name may differ from formula name; check with `brew info <pkg>` |
+| `make sync` exits with "nothing to add" | All installed packages are already in the Brewfile — nothing to do |
+| `make snapshot-prefs` fails for an app | App is not installed or `defaults export` failed; check the app is running |
+| post-install login item already exists | Safe to ignore — `add_login_item` checks before adding |
