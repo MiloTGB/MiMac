@@ -133,10 +133,10 @@ if [[ -d "$FONTS_SRC" ]]; then
     [[ -f "$font" ]] || continue
     fname="$(basename "$font")"
     if [[ -f "$FONTS_DST/$fname" ]]; then
-      ((skipped++))
+      skipped=$((skipped + 1))
     else
       cp "$font" "$FONTS_DST/$fname"
-      ((installed++))
+      installed=$((installed + 1))
     fi
   done
   log "Fonts: $installed installed, $skipped already present"
