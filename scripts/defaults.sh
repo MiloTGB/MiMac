@@ -90,6 +90,8 @@ write_default NSGlobalDomain PMPrintingExpandedStateForPrint2 bool true || ((fai
 write_default NSGlobalDomain NSDocumentSaveNewDocumentsToCloud bool false || ((failed++))
 # Instant Quick Look animation
 write_default NSGlobalDomain QLPanelAnimationDuration float 0 || ((failed++))
+# Custom highlight color (green)
+write_default NSGlobalDomain AppleHighlightColor string "0.7647 0.9765 0.5686 Green" || ((failed++))
 
 ###############################################################################
 # Sound                                                                       #

@@ -81,6 +81,68 @@ else
 fi
 
 ###############################################################################
+# GitHub CLI configuration                                                    #
+###############################################################################
+
+GH_SRC="$REPO_ROOT/assets/gh/config.yml"
+GH_DST="$HOME/.config/gh/config.yml"
+
+if command -v gh >/dev/null 2>&1 && [[ -f "$GH_SRC" ]]; then
+  mkdir -p "$HOME/.config/gh"
+  if [[ -L "$GH_DST" ]] && [[ "$(readlink "$GH_DST")" == "$GH_SRC" ]]; then
+    log "GitHub CLI config already linked"
+  else
+    [[ -f "$GH_DST" ]] && mv "$GH_DST" "${GH_DST}.bak"
+    ln -s "$GH_SRC" "$GH_DST"
+    log "Linked GitHub CLI config → $GH_DST"
+  fi
+else
+  log "Skipping GitHub CLI config (gh not installed)"
+fi
+
+###############################################################################
+# htop configuration                                                          #
+###############################################################################
+
+HTOP_SRC="$REPO_ROOT/assets/htop/htoprc"
+HTOP_DST="$HOME/.config/htop/htoprc"
+
+if command -v htop >/dev/null 2>&1 && [[ -f "$HTOP_SRC" ]]; then
+  mkdir -p "$HOME/.config/htop"
+  if [[ -L "$HTOP_DST" ]] && [[ "$(readlink "$HTOP_DST")" == "$HTOP_SRC" ]]; then
+    log "htop config already linked"
+  else
+    [[ -f "$HTOP_DST" ]] && mv "$HTOP_DST" "${HTOP_DST}.bak"
+    ln -s "$HTOP_SRC" "$HTOP_DST"
+    log "Linked htop config → $HTOP_DST"
+  fi
+else
+  log "Skipping htop config (htop not installed)"
+fi
+
+###############################################################################
+# Custom fonts                                                                #
+###############################################################################
+
+FONTS_SRC="$REPO_ROOT/assets/fonts"
+FONTS_DST="$HOME/Library/Fonts"
+
+if [[ -d "$FONTS_SRC" ]]; then
+  installed=0 skipped=0
+  for font in "$FONTS_SRC"/*; do
+    [[ -f "$font" ]] || continue
+    fname="$(basename "$font")"
+    if [[ -f "$FONTS_DST/$fname" ]]; then
+      ((skipped++))
+    else
+      cp "$font" "$FONTS_DST/$fname"
+      ((installed++))
+    fi
+  done
+  log "Fonts: $installed installed, $skipped already present"
+fi
+
+###############################################################################
 # Browser preferences                                                        #
 ###############################################################################
 
