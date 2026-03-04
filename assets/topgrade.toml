@@ -18,8 +18,6 @@ notify_each_step = true  # Consider setting to false later
 [pre_commands]
 "Clean Node global shims" = "bash -lc 'bp=$(brew --prefix 2>/dev/null) && rm -f \"$bp\"/bin/{yarn,pnpm,corepack} && rm -rf \"$bp\"/lib/node_modules/{yarn,pnpm,corepack}'"
 
-[commands]
-"npm global update" = "bash -lc 'npm update -g'"
 
 [brew]
 greedy_cask = true
