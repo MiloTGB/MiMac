@@ -3,7 +3,7 @@ REPO_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 SCRIPTS := scripts
 BIN_DIR   := $(REPO_ROOT)/bin
 
-.PHONY: all install fix-exec setup brew post-install tools dotfiles defaults trackpad uninstall nuke update updates harden status doctor dock sync snapshot-prefs pull-prefs picker manual help
+.PHONY: all install fix-exec setup brew post-install tools dotfiles defaults trackpad uninstall nuke update updates harden status doctor dock sync sync-commit sync-prune sync-clean setup-dry nuke-execute picker manual help snapshot-prefs pull-prefs
 
 help: ## Show available make commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -19,8 +19,11 @@ fix-exec: ## Make scripts and bin files executable
 
 install: setup ## Run Phase 1 setup
 
-setup: fix-exec ## Phase 1: shell, dotfiles, macOS defaults
+setup: fix-exec ## Phase 1: shell, dotfiles, macOS defaults (use ARGS=--dry-run to preview)
 	@"$(SCRIPTS)/setup"
+
+setup-dry: fix-exec ## Preview setup changes without applying
+	@"$(SCRIPTS)/setup" --dry-run
 
 brew: fix-exec ## Phase 2: install Homebrew packages and casks
 	@"$(SCRIPTS)/brew-packages"
@@ -43,8 +46,11 @@ trackpad: ## Apply macOS defaults including trackpad settings
 uninstall: ## Remove symlinks and undo setup
 	@"$(SCRIPTS)/uninstall"
 
-nuke: ## Complete MiMac removal (dry-run by default, use with caution!)
+nuke: ## Complete MiMac removal (dry-run preview, use nuke-execute to actually run)
 	@"$(SCRIPTS)/nuke-mimac"
+
+nuke-execute: ## DESTRUCTIVE: Execute complete MiMac removal (requires confirmation)
+	@"$(SCRIPTS)/nuke-mimac" --execute
 
 update: ## Upgrade all packages (topgrade or brew)
 	@if command -v topgrade >/dev/null 2>&1; then topgrade; else brew update && brew upgrade; fi
@@ -65,8 +71,17 @@ doctor: ## Run diagnostics
 dock: ## Populate Dock with preferred apps
 	@"$(SCRIPTS)/dock-setup"
 
-sync: ## Sync installed Homebrew packages into the Brewfile  (pass ARGS=-c to commit, ARGS=-n for dry run)
+sync: ## Sync installed Homebrew packages into Brewfile (use ARGS="-c" to commit, ARGS="-p" to prune)
 	@"$(SCRIPTS)/sync" $(ARGS)
+
+sync-commit: ## Sync Brewfile and auto-commit changes
+	@"$(SCRIPTS)/sync" -c
+
+sync-prune: ## Preview stale packages to remove (dry-run)
+	@"$(SCRIPTS)/sync" -p -n
+
+sync-clean: ## Remove stale packages and commit
+	@"$(SCRIPTS)/sync" -p -c
 
 snapshot-prefs: ## Export app preferences and push to mimac-prefs
 	@"$(SCRIPTS)/snapshot-prefs"
