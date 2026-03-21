@@ -3,7 +3,7 @@ REPO_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 SCRIPTS := scripts
 BIN_DIR   := $(REPO_ROOT)/bin
 
-.PHONY: all install fix-exec setup brew post-install tools dotfiles defaults trackpad uninstall update updates harden status doctor dock sync snapshot-prefs pull-prefs picker manual help
+.PHONY: all install fix-exec setup brew post-install tools dotfiles defaults trackpad uninstall nuke update updates harden status doctor dock sync snapshot-prefs pull-prefs picker manual help
 
 help: ## Show available make commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -42,6 +42,9 @@ trackpad: ## Apply macOS defaults including trackpad settings
 
 uninstall: ## Remove symlinks and undo setup
 	@"$(SCRIPTS)/uninstall"
+
+nuke: ## Complete MiMac removal (dry-run by default, use with caution!)
+	@"$(SCRIPTS)/nuke-mimac"
 
 update: ## Upgrade all packages (topgrade or brew)
 	@if command -v topgrade >/dev/null 2>&1; then topgrade; else brew update && brew upgrade; fi

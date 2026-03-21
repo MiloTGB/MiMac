@@ -1,0 +1,418 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# nuke-mimac — Comprehensive MiMac removal tool
+# WARNING: This is a DESTRUCTIVE operation that removes all MiMac traces
+#
+# Usage:
+#   scripts/nuke-mimac              # dry-run (safe preview)
+#   scripts/nuke-mimac --execute    # actually perform cleanup
+#   scripts/nuke-mimac --execute --brew-cleanup  # also remove Homebrew packages
+
+# Resolve symlinks
+_self="${BASH_SOURCE[0]}"
+while [[ -L "$_self" ]]; do
+  _dir="$(cd "$(dirname "$_self")" && pwd)"
+  _self="$(readlink "$_self")"
+  [[ "$_self" != /* ]] && _self="$_dir/$_self"
+done
+SCRIPT_DIR="$(cd "$(dirname "$_self")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Options
+DRY_RUN=true
+BREW_CLEANUP=false
+VERBOSE=false
+
+while (("$#")); do
+  case "$1" in
+    --execute) DRY_RUN=false ;;
+    --dry-run) DRY_RUN=true ;;
+    --brew-cleanup) BREW_CLEANUP=true ;;
+    -v|--verbose) VERBOSE=true ;;
+    -h|--help)
+      cat <<'USAGE'
+nuke-mimac — Comprehensive MiMac removal tool
+
+Usage: scripts/nuke-mimac [options]
+  --execute         Actually perform cleanup (default: dry-run)
+  --dry-run         Preview what would be removed (default)
+  --brew-cleanup    Also uninstall Homebrew packages from Brewfile
+  -v, --verbose     Show detailed output
+
+WARNING: --execute is DESTRUCTIVE and will:
+  • Remove all MiMac dotfile symlinks
+  • Remove all MiMac tool symlinks from ~/bin
+  • Execute defaults and hardening rollback scripts
+  • Optionally delete MiMac and mimac-prefs repositories
+  • Optionally uninstall Homebrew packages
+
+Always run without --execute first to preview changes!
+USAGE
+      exit 0
+      ;;
+    *) echo "Unknown option: $1" >&2; exit 1 ;;
+  esac
+  shift
+done
+
+# Logging functions
+log() { printf "[nuke-mimac] %s\n" "$*"; }
+warn() { printf "[WARN] %s\n" "$*" >&2; }
+err() { printf "[ERROR] %s\n" "$*" >&2; }
+verbose() { $VERBOSE && log "$*" || true; }
+
+if $DRY_RUN; then
+  log "DRY-RUN MODE: No changes will be made"
+  log "Use --execute to actually perform cleanup"
+  echo ""
+fi
+
+# Track operations
+operations_summary=""
+backup_created=false
+
+# ─── 1. Create backup (execute mode only) ───────────────────────────────────
+
+if ! $DRY_RUN; then
+  backup_dir="$HOME/.mimac-nuke-backup-$(date +%Y%m%d-%H%M%S)"
+  log "Creating backup at: $backup_dir"
+
+  if mkdir -p "$backup_dir"; then
+    backup_created=true
+
+    # Backup rollback scripts if they exist
+    if [[ -f "$HOME/.mimac/defaults-rollback.sh" ]]; then
+      cp "$HOME/.mimac/defaults-rollback.sh" "$backup_dir/"
+      verbose "Backed up defaults-rollback.sh"
+    fi
+    if [[ -f "$HOME/.mimac/hardening-rollback.sh" ]]; then
+      cp "$HOME/.mimac/hardening-rollback.sh" "$backup_dir/"
+      verbose "Backed up hardening-rollback.sh"
+    fi
+
+    # Backup .mimac state directory
+    if [[ -d "$HOME/.mimac" ]]; then
+      cp -R "$HOME/.mimac" "$backup_dir/.mimac-state"
+      verbose "Backed up .mimac state directory"
+    fi
+
+    log "Backup created successfully"
+    operations_summary+="✓ Created backup: $backup_dir\n"
+  else
+    err "Failed to create backup directory"
+    exit 1
+  fi
+fi
+
+# ─── 2. Identify dotfiles ────────────────────────────────────────────────────
+
+dotfiles_dir="$REPO_ROOT/dotfiles"
+dotfiles_to_remove=()
+
+if [[ -d "$dotfiles_dir" ]]; then
+  log "Scanning for dotfile symlinks..."
+
+  while IFS= read -r -d '' dotfile; do
+    filename="$(basename "$dotfile")"
+    target="$HOME/$filename"
+
+    if [[ -L "$target" ]]; then
+      link_target="$(readlink "$target")"
+      # Check if symlink points to MiMac dotfiles
+      if [[ "$link_target" == "$dotfiles_dir/$filename" ]] || \
+         [[ "$link_target" == "$dotfile" ]]; then
+        dotfiles_to_remove+=("$target")
+        verbose "Found: $target -> $link_target"
+      fi
+    fi
+  done < <(find "$dotfiles_dir" -maxdepth 1 -type f -print0 2>/dev/null)
+
+  if (( ${#dotfiles_to_remove[@]} > 0 )); then
+    operations_summary+="✓ Remove ${#dotfiles_to_remove[@]} dotfile symlink(s)\n"
+  else
+    operations_summary+="• No dotfile symlinks found\n"
+  fi
+fi
+
+# ─── 3. Identify tool symlinks ───────────────────────────────────────────────
+
+bin_dir="$HOME/bin"
+tools_to_remove=()
+
+if [[ -d "$bin_dir" ]]; then
+  log "Scanning for tool symlinks in ~/bin..."
+
+  while IFS= read -r -d '' link; do
+    link_target="$(readlink "$link" 2>/dev/null || true)"
+
+    # Check if symlink points to MiMac scripts or bin
+    if [[ "$link_target" == "$REPO_ROOT/scripts/"* ]] || \
+       [[ "$link_target" == "$REPO_ROOT/bin/"* ]]; then
+      tools_to_remove+=("$link")
+      verbose "Found: $link -> $link_target"
+    fi
+  done < <(find "$bin_dir" -maxdepth 1 -type l -print0 2>/dev/null)
+
+  if (( ${#tools_to_remove[@]} > 0 )); then
+    operations_summary+="✓ Remove ${#tools_to_remove[@]} tool symlink(s) from ~/bin\n"
+  else
+    operations_summary+="• No tool symlinks found in ~/bin\n"
+  fi
+fi
+
+# ─── 4. Check for rollback scripts ──────────────────────────────────────────
+
+rollback_scripts=()
+if [[ -x "$HOME/.mimac/defaults-rollback.sh" ]]; then
+  rollback_scripts+=("$HOME/.mimac/defaults-rollback.sh")
+fi
+if [[ -x "$HOME/.mimac/hardening-rollback.sh" ]]; then
+  rollback_scripts+=("$HOME/.mimac/hardening-rollback.sh")
+fi
+
+if (( ${#rollback_scripts[@]} > 0 )); then
+  operations_summary+="✓ Execute ${#rollback_scripts[@]} rollback script(s)\n"
+else
+  operations_summary+="• No rollback scripts found\n"
+fi
+
+# ─── 5. Repository cleanup (will prompt) ─────────────────────────────────────
+
+repos_to_delete=()
+[[ -d "$HOME/MiMac" ]] && repos_to_delete+=("$HOME/MiMac")
+[[ -d "$HOME/mimac-prefs" ]] && repos_to_delete+=("$HOME/mimac-prefs")
+
+if (( ${#repos_to_delete[@]} > 0 )); then
+  operations_summary+="? Optional: Delete ${#repos_to_delete[@]} repository/repositories (will prompt)\n"
+fi
+
+# ─── 6. Homebrew cleanup (will prompt if --brew-cleanup) ────────────────────
+
+brewfile="$REPO_ROOT/Brewfile"
+brew_packages_count=0
+
+if $BREW_CLEANUP && [[ -f "$brewfile" ]]; then
+  log "Counting Homebrew packages in Brewfile..."
+  brew_packages_count=$(grep -cE '^(brew|cask) ' "$brewfile" || true)
+  if (( brew_packages_count > 0 )); then
+    operations_summary+="? Optional: Uninstall $brew_packages_count Homebrew package(s) (will prompt)\n"
+  fi
+fi
+
+# ─── 7. Show summary ─────────────────────────────────────────────────────────
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  nuke-mimac — Removal Summary"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+printf "%b" "$operations_summary"
+echo ""
+
+if $DRY_RUN; then
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo ""
+  log "This was a dry run. Use --execute to actually perform these operations."
+  exit 0
+fi
+
+# ─── 8. Confirmations (execute mode) ────────────────────────────────────────
+
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+
+# First confirmation: basic cleanup
+if (( ${#dotfiles_to_remove[@]} > 0 )) || \
+   (( ${#tools_to_remove[@]} > 0 )) || \
+   (( ${#rollback_scripts[@]} > 0 )); then
+
+  read -r -p "Remove MiMac dotfiles, tools, and restore preferences? [y/N] " ans
+  if [[ ! "$ans" =~ ^[Yy]$ ]]; then
+    log "Operation cancelled."
+    exit 0
+  fi
+
+  do_basic_cleanup=true
+else
+  do_basic_cleanup=false
+fi
+
+# Repository deletion confirmation
+do_repo_cleanup=false
+if (( ${#repos_to_delete[@]} > 0 )); then
+  echo ""
+  log "Repositories found:"
+  for repo in "${repos_to_delete[@]}"; do
+    echo "  • $repo"
+  done
+  read -r -p "Delete these repositories? [y/N] " ans
+  if [[ "$ans" =~ ^[Yy]$ ]]; then
+    do_repo_cleanup=true
+  fi
+fi
+
+# Homebrew cleanup confirmation
+do_brew_cleanup=false
+if $BREW_CLEANUP && (( brew_packages_count > 0 )); then
+  echo ""
+  warn "This will uninstall $brew_packages_count Homebrew packages!"
+  warn "This may remove packages you installed manually!"
+  read -r -p "Uninstall Homebrew packages from Brewfile? [y/N] " ans
+  if [[ "$ans" =~ ^[Yy]$ ]]; then
+    do_brew_cleanup=true
+  fi
+fi
+
+# Final confirmation
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+warn "FINAL CONFIRMATION: This is a DESTRUCTIVE operation!"
+if $backup_created; then
+  log "Backup created at: $backup_dir"
+fi
+read -r -p "Type 'NUKE' (all caps) to confirm: " confirmation
+
+if [[ "$confirmation" != "NUKE" ]]; then
+  log "Confirmation failed. Operation cancelled."
+  exit 0
+fi
+
+echo ""
+log "Starting cleanup operations..."
+echo ""
+
+# ─── 9. Execute cleanup ──────────────────────────────────────────────────────
+
+# Remove dotfiles
+if $do_basic_cleanup && (( ${#dotfiles_to_remove[@]} > 0 )); then
+  log "Removing dotfile symlinks..."
+  for link in "${dotfiles_to_remove[@]}"; do
+    if rm -f "$link"; then
+      verbose "Removed: $link"
+    else
+      warn "Failed to remove: $link"
+    fi
+  done
+  log "Removed ${#dotfiles_to_remove[@]} dotfile(s)"
+fi
+
+# Remove tool symlinks
+if $do_basic_cleanup && (( ${#tools_to_remove[@]} > 0 )); then
+  log "Removing tool symlinks from ~/bin..."
+  for link in "${tools_to_remove[@]}"; do
+    if rm -f "$link"; then
+      verbose "Removed: $link"
+    else
+      warn "Failed to remove: $link"
+    fi
+  done
+  log "Removed ${#tools_to_remove[@]} tool(s)"
+
+  # Remove ~/bin if empty and was created by MiMac
+  if [[ -d "$bin_dir" ]] && [[ -z "$(ls -A "$bin_dir" 2>/dev/null)" ]]; then
+    if rmdir "$bin_dir" 2>/dev/null; then
+      log "Removed empty ~/bin directory"
+    fi
+  fi
+fi
+
+# Execute rollback scripts
+if $do_basic_cleanup && (( ${#rollback_scripts[@]} > 0 )); then
+  for script in "${rollback_scripts[@]}"; do
+    log "Executing rollback: $script"
+    if "$script"; then
+      log "✓ Rollback completed: $(basename "$script")"
+    else
+      warn "Rollback returned non-zero: $script"
+    fi
+  done
+fi
+
+# Remove .mimac state directory
+if $do_basic_cleanup && [[ -d "$HOME/.mimac" ]]; then
+  log "Removing ~/.mimac state directory..."
+  if rm -rf "$HOME/.mimac"; then
+    log "Removed ~/.mimac"
+  else
+    warn "Failed to remove ~/.mimac"
+  fi
+fi
+
+# Repository cleanup
+if $do_repo_cleanup; then
+  log "Removing repositories..."
+  for repo in "${repos_to_delete[@]}"; do
+    if [[ -d "$repo" ]]; then
+      log "Removing: $repo"
+      if rm -rf "$repo"; then
+        log "✓ Removed: $repo"
+      else
+        warn "Failed to remove: $repo"
+      fi
+    fi
+  done
+fi
+
+# Homebrew cleanup
+if $do_brew_cleanup && command -v brew >/dev/null 2>&1; then
+  log "Uninstalling Homebrew packages from Brewfile..."
+
+  # Parse formulae and casks from Brewfile
+  formulae=()
+  casks=()
+
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^brew[[:space:]]\"([^\"]+)\" ]]; then
+      formulae+=("${BASH_REMATCH[1]}")
+    elif [[ "$line" =~ ^cask[[:space:]]\"([^\"]+)\" ]]; then
+      casks+=("${BASH_REMATCH[1]}")
+    fi
+  done < "$brewfile"
+
+  # Uninstall casks first (they may depend on formulae)
+  if (( ${#casks[@]} > 0 )); then
+    log "Uninstalling ${#casks[@]} cask(s)..."
+    for cask in "${casks[@]}"; do
+      verbose "Uninstalling cask: $cask"
+      brew uninstall --cask "$cask" 2>/dev/null || warn "Failed to uninstall cask: $cask"
+    done
+  fi
+
+  # Uninstall formulae
+  if (( ${#formulae[@]} > 0 )); then
+    log "Uninstalling ${#formulae[@]} formula(e)..."
+    for formula in "${formulae[@]}"; do
+      verbose "Uninstalling formula: $formula"
+      brew uninstall "$formula" 2>/dev/null || warn "Failed to uninstall formula: $formula"
+    done
+  fi
+
+  log "Homebrew cleanup complete"
+  log "Note: Run 'brew autoremove' to clean up unused dependencies"
+fi
+
+# ─── 10. Final summary ───────────────────────────────────────────────────────
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  nuke-mimac — Cleanup Complete"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+
+log "MiMac has been removed from your system."
+
+if $backup_created; then
+  log "Backup available at: $backup_dir"
+  log "To restore rollback scripts:"
+  log "  cp $backup_dir/*.sh ~/.mimac/"
+fi
+
+if $do_brew_cleanup; then
+  log ""
+  log "To remove unused Homebrew dependencies:"
+  log "  brew autoremove"
+fi
+
+echo ""
+log "System cleanup complete."
