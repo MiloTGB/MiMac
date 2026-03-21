@@ -15,11 +15,13 @@ INSTALL_BIN="$HOME/bin"
 STATE_DIR="$HOME/.mimac"
 BREWFILE="$REPO_ROOT/Brewfile"
 
-ok()    { printf '\033[32m✓ %s\033[0m\n' "$*"; }
-warn()  { printf '\033[33m⚠ %s\033[0m\n' "$*"; }
-err()   { printf '\033[31m✗ %s\033[0m\n' "$*"; }
+# Color-coded output functions
+ok()    { printf $'\033[32m✓ %s\033[0m\n' "$*"; }
+warn()  { printf $'\033[33m⚠ %s\033[0m\n' "$*"; }
+err()   { printf $'\033[31m✗ %s\033[0m\n' "$*"; }
 info()  { printf '  %s\n' "$*"; }
 
+echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  MiMac Installation Status"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -249,3 +251,4 @@ if [[ -f "$BREWFILE" ]]; then
 fi
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""

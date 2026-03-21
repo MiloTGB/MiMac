@@ -71,5 +71,6 @@ case "${PHASE:-setup}" in
     "$SCRIPT_DIR/brew-packages" "${PASSTHROUGH[@]+"${PASSTHROUGH[@]}"}"
     "$SCRIPT_DIR/post-install" "${PASSTHROUGH[@]+"${PASSTHROUGH[@]}"}"
     log "All phases complete."
+    cd "$HOME"
     ;;
 esac
