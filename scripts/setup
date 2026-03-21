@@ -679,6 +679,10 @@ show_summary() {
 if (( ! DRY_RUN )); then
   show_summary
   log "Setup complete."
+  if (( ERRORS == 0 )); then
+    echo "  Run \`exec zsh\` to reload your shell, or open a new terminal."
+    echo ""
+  fi
 else
   echo ""
   log "Dry run complete. No changes were made."

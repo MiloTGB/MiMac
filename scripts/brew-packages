@@ -75,11 +75,12 @@ trap cleanup EXIT INT TERM
 setup_logging
 
 # Override logging to write to both stderr and logfile
-# (can't use exec > >(tee) as it breaks brew output capture)
-log()  { printf "[MiMac] %s\n" "$*" | tee -a "$LOGFILE" >&2; }
-warn() { printf "[warn] %s\n" "$*" | tee -a "$LOGFILE" >&2; }
-err()  { printf "[err ] %s\n" "$*" | tee -a "$LOGFILE" >&2; }
-dry()  { if (( DRY_RUN )); then printf "[dry] %s\n" "$*" | tee -a "$LOGFILE" >&2; else log "$@"; fi; }
+# Override log functions to add tee logging (can't use exec > >(tee) as it breaks brew output capture)
+log()  { printf '%s  ▸%s %s\n' "$_CYN" "$_R" "$*" | tee -a "$LOGFILE" >&2; }
+ok()   { printf '%s  ✓%s %s\n' "$_GRN" "$_R" "$*" | tee -a "$LOGFILE" >&2; }
+warn() { printf '%s  ⚠%s %s\n' "$_YLW" "$_R" "$*" | tee -a "$LOGFILE" >&2; }
+err()  { printf '%s  ✗%s %s\n' "$_RED" "$_R" "$*" | tee -a "$LOGFILE" >&2; }
+dry()  { if (( DRY_RUN )); then printf '%s  ◦%s %s\n' "$_BLU" "$_R" "$*" | tee -a "$LOGFILE" >&2; else log "$@"; fi; }
 
 log "Starting brew installation... (log: $LOGFILE)"
 if (( DRY_RUN )); then

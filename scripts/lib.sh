@@ -21,12 +21,26 @@ STATE_DIR="$HOME/.mimac"
 LOGFILE="$STATE_DIR/install.log"
 LOG_MAX_SIZE=10485760  # 10MB
 
+# Color codes (only when output is a terminal)
+if [[ -t 2 ]]; then
+  _R='\033[0m'        # Reset
+  _B='\033[1m'        # Bold
+  _CYN='\033[36m'     # Cyan
+  _GRN='\033[32m'     # Green
+  _YLW='\033[33m'     # Yellow
+  _RED='\033[31m'     # Red
+  _BLU='\033[34m'     # Blue
+else
+  _R='' _B='' _CYN='' _GRN='' _YLW='' _RED='' _BLU=''
+fi
+
 # Logging helpers
-log()     { printf "[MiMac] %s\n" "$*" >&2; }
-warn()    { printf "[warn] %s\n" "$*" >&2; }
-err()     { printf "[err ] %s\n" "$*" >&2; }
-dry()     { if (( DRY_RUN )); then printf "[dry] %s\n" "$*"; else log "$@"; fi; }
-logskip() { printf "[skip] %s (%s)\n" "$1" "$2" >&2; }
+log()     { printf '%s  ▸%s %s\n' "$_CYN" "$_R" "$*" >&2; }
+ok()      { printf '%s  ✓%s %s\n' "$_GRN" "$_R" "$*" >&2; }
+warn()    { printf '%s  ⚠%s %s\n' "$_YLW" "$_R" "$*" >&2; }
+err()     { printf '%s  ✗%s %s\n' "$_RED" "$_R" "$*" >&2; }
+dry()     { if (( DRY_RUN )); then printf '%s  ◦%s %s\n' "$_BLU" "$_R" "$*" >&2; else log "$@"; fi; }
+logskip() { printf '%s  ·%s %s (%s)\n' "$_YLW" "$_R" "$1" "$2" >&2; }
 
 # Refresh sudo timestamp to prevent timeout during long-running installs.
 # Uses -n (non-interactive) so it never prompts — only extends an active session.

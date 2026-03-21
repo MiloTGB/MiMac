@@ -19,6 +19,10 @@ done
 SCRIPT_DIR="$(cd "$(dirname "$_self")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# Source shared helpers
+# shellcheck source=lib.sh
+source "$SCRIPT_DIR/lib.sh"
+
 # Options
 DRY_RUN=true
 BREW_CLEANUP=false
@@ -56,10 +60,7 @@ USAGE
   shift
 done
 
-# Logging functions
-log() { printf "[nuke-mimac] %s\n" "$*"; }
-warn() { printf "[WARN] %s\n" "$*" >&2; }
-err() { printf "[ERROR] %s\n" "$*" >&2; }
+# Verbose logging helper
 verbose() { $VERBOSE && log "$*" || true; }
 
 if $DRY_RUN; then

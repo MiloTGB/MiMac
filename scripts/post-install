@@ -16,7 +16,9 @@ SCRIPT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 readonly SCRIPT_DIR REPO_ROOT
 
-log(){ printf "[post-install] %s\n" "$*"; }
+# Source shared helpers
+# shellcheck source=lib.sh
+source "$SCRIPT_DIR/lib.sh"
 
 failed=0
 incr_failed(){ failed=$((failed + 1)); }
