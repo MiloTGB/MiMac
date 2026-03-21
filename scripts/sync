@@ -12,11 +12,13 @@ check_macos
 
 DRY_RUN=0
 COMMIT=0
+PRUNE=0
 
 while (("$#")); do
   case "$1" in
     --dry-run|-n) DRY_RUN=1 ;;
     --commit|-c)  COMMIT=1 ;;
+    --prune|-p)   PRUNE=1 ;;
     -h|--help)
       cat <<'USAGE'
 MiMac sync — Snapshot installed Homebrew packages into the Brewfile
@@ -24,6 +26,7 @@ MiMac sync — Snapshot installed Homebrew packages into the Brewfile
 Usage: scripts/sync [options]
   --dry-run, -n   Show what would be added without modifying the Brewfile
   --commit, -c    Auto-commit the Brewfile after updating
+  --prune, -p     Remove Brewfile entries for packages that are no longer installed
 USAGE
       exit 0
       ;;
@@ -78,12 +81,17 @@ done < "$BREWFILE"
 
 log "Scanning installed Homebrew packages..."
 
-declare -A installed_formulae=()
+declare -A installed_formulae=()    # top-level only (for new-package detection)
+declare -A installed_formulae_all=() # all installed (for stale detection)
 declare -A installed_casks=()
 
 while IFS= read -r pkg; do
   [[ -n "$pkg" ]] && installed_formulae["$pkg"]=1
 done < <($HOMEBREW leaves 2>/dev/null)
+
+while IFS= read -r pkg; do
+  [[ -n "$pkg" ]] && installed_formulae_all["$pkg"]=1
+done < <($HOMEBREW list --formula 2>/dev/null)
 
 while IFS= read -r pkg; do
   [[ -n "$pkg" ]] && installed_casks["$pkg"]=1
@@ -460,5 +468,206 @@ if (( COMMIT )); then
     git add Brewfile
     git commit -m "$commit_msg"
     log "Committed: $commit_msg"
+  fi
+fi
+
+# ─── 10. Prune mode (remove stale entries) ──────────────────────────────────
+
+if (( PRUNE )); then
+  log "Checking for stale Brewfile entries..."
+
+  # Compute stale packages (in Brewfile but not installed)
+  stale_formulae_arr=()
+  stale_casks_arr=()
+
+  for pkg in "${!brewfile_formulae[@]}"; do
+    [[ -z "${installed_formulae_all[$pkg]+x}" ]] && stale_formulae_arr+=("$pkg")
+  done
+
+  for pkg in "${!brewfile_casks[@]}"; do
+    [[ -z "${installed_casks[$pkg]+x}" ]] && stale_casks_arr+=("$pkg")
+  done
+
+  # Sort
+  if (( ${#stale_formulae_arr[@]} > 0 )); then
+    mapfile -t stale_formulae_arr < <(printf '%s\n' "${stale_formulae_arr[@]}" | sort)
+  fi
+  if (( ${#stale_casks_arr[@]} > 0 )); then
+    mapfile -t stale_casks_arr < <(printf '%s\n' "${stale_casks_arr[@]}" | sort)
+  fi
+
+  n_stale=$(( ${#stale_formulae_arr[@]} + ${#stale_casks_arr[@]} ))
+
+  if (( n_stale == 0 )); then
+    log "No stale entries found. Brewfile is clean."
+    exit 0
+  fi
+
+  # Show stale packages
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  Sync — Stale Brewfile Entries (not installed)"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  if (( ${#stale_formulae_arr[@]} > 0 )); then
+    echo ""
+    echo "  Formulae:"
+    for pkg in "${stale_formulae_arr[@]}"; do
+      printf "    - brew \"%s\"\n" "$pkg"
+    done
+  fi
+  if (( ${#stale_casks_arr[@]} > 0 )); then
+    echo ""
+    echo "  Casks:"
+    for pkg in "${stale_casks_arr[@]}"; do
+      printf "    - cask \"%s\"\n" "$pkg"
+    done
+  fi
+  echo ""
+
+  # Selection UI for pruning
+  declare -A prune_formulae=()
+  declare -A prune_casks=()
+
+  if command -v gum >/dev/null 2>&1; then
+    if (( ${#stale_formulae_arr[@]} > 0 )); then
+      gum_out=$(gum choose --no-limit \
+        --cursor.foreground=196 \
+        --selected.foreground=196 \
+        --header="Select formulae to REMOVE from Brewfile (space to toggle, enter to confirm):" \
+        "${stale_formulae_arr[@]}" < /dev/tty 2>/dev/tty) || true
+      while IFS= read -r name; do
+        [[ -n "$name" ]] && prune_formulae["$name"]=1
+      done <<< "$gum_out"
+    fi
+    if (( ${#stale_casks_arr[@]} > 0 )); then
+      gum_out=$(gum choose --no-limit \
+        --cursor.foreground=196 \
+        --selected.foreground=196 \
+        --header="Select casks to REMOVE from Brewfile (space to toggle, enter to confirm):" \
+        "${stale_casks_arr[@]}" < /dev/tty 2>/dev/tty) || true
+      while IFS= read -r name; do
+        [[ -n "$name" ]] && prune_casks["$name"]=1
+      done <<< "$gum_out"
+    fi
+  else
+    warn "gum not available for interactive selection"
+    # Non-interactive: confirm all-or-nothing
+    if (( DRY_RUN == 0 )); then
+      read -r -p "Remove all $n_stale stale entries? [y/N] " ans < /dev/tty
+      if [[ "$ans" =~ ^[Yy]$ ]]; then
+        for pkg in "${stale_formulae_arr[@]}"; do prune_formulae["$pkg"]=1; done
+        for pkg in "${stale_casks_arr[@]}"; do prune_casks["$pkg"]=1; done
+      else
+        log "Prune cancelled."
+        exit 0
+      fi
+    fi
+  fi
+
+  n_prune=$(( ${#prune_formulae[@]} + ${#prune_casks[@]} ))
+
+  if (( n_prune == 0 )); then
+    log "No packages selected for removal."
+    exit 0
+  fi
+
+  # Show prune summary
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  Sync — Removals from Brewfile"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  if (( ${#prune_formulae[@]} > 0 )); then
+    echo ""
+    echo "  Formulae:"
+    while IFS= read -r pkg; do
+      printf "    - brew \"%s\"\n" "$pkg"
+    done < <(printf '%s\n' "${!prune_formulae[@]}" | sort)
+  fi
+  if (( ${#prune_casks[@]} > 0 )); then
+    echo ""
+    echo "  Casks:"
+    while IFS= read -r pkg; do
+      printf "    - cask \"%s\"\n" "$pkg"
+    done < <(printf '%s\n' "${!prune_casks[@]}" | sort)
+  fi
+  echo ""
+
+  if (( DRY_RUN )); then
+    echo "  [dry run] Brewfile not modified."
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    exit 0
+  fi
+
+  # Remove entries using Python
+  if ! command -v python3 >/dev/null 2>&1; then
+    err "python3 not found — cannot modify Brewfile"
+    exit 1
+  fi
+
+  python3 - "$BREWFILE" <<'PYEOF'
+import sys, re
+
+brewfile_path = sys.argv[1]
+
+# Read packages to remove from environment (passed via stdin)
+packages_to_remove = []
+PYEOF
+
+  # Build list of packages to remove
+  all_prune_pkgs=()
+  for pkg in "${!prune_formulae[@]}"; do all_prune_pkgs+=("$pkg"); done
+  for pkg in "${!prune_casks[@]}"; do all_prune_pkgs+=("$pkg"); done
+
+  python3 - "$BREWFILE" "${all_prune_pkgs[@]}" <<'PYEOF'
+import sys, re
+
+brewfile_path = sys.argv[1]
+packages_to_remove = sys.argv[2:]
+
+with open(brewfile_path, 'r') as f:
+    lines = f.readlines()
+
+new_lines = []
+removed = []
+for line in lines:
+    should_remove = False
+    for pkg in packages_to_remove:
+        # Match both brew "pkg" and cask "pkg"
+        if re.search(rf'(?:brew|cask)\s+["\']({re.escape(pkg)})["\']', line):
+            should_remove = True
+            if pkg not in removed:
+                removed.append(pkg)
+            break
+    if not should_remove:
+        new_lines.append(line)
+
+with open(brewfile_path, 'w') as f:
+    f.writelines(new_lines)
+
+print(f'Removed {len(removed)} entr{"ies" if len(removed) != 1 else "y"} from Brewfile.')
+PYEOF
+
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo ""
+  log "Brewfile pruned."
+
+  # Optional commit for prune
+  if (( COMMIT )); then
+    cd "$REPO_ROOT"
+    if git diff --quiet Brewfile 2>/dev/null; then
+      log "No changes to commit."
+    else
+      removed_pkgs=()
+      for pkg in "${!prune_formulae[@]}"; do removed_pkgs+=("$pkg"); done
+      for pkg in "${!prune_casks[@]}"; do removed_pkgs+=("$pkg"); done
+      mapfile -t removed_pkgs < <(printf '%s\n' "${removed_pkgs[@]}" | sort)
+      commit_msg="sync: remove $(IFS=', '; echo "${removed_pkgs[*]}")"
+      git add Brewfile
+      git commit -m "$commit_msg"
+      log "Committed: $commit_msg"
+    fi
   fi
 fi
