@@ -23,13 +23,13 @@ LOG_MAX_SIZE=10485760  # 10MB
 
 # Color codes (only when output is a terminal)
 if [[ -t 2 ]]; then
-  _R='\033[0m'        # Reset
-  _B='\033[1m'        # Bold
-  _CYN='\033[36m'     # Cyan
-  _GRN='\033[32m'     # Green
-  _YLW='\033[33m'     # Yellow
-  _RED='\033[31m'     # Red
-  _BLU='\033[34m'     # Blue
+  _R=$'\033[0m'        # Reset
+  _B=$'\033[1m'        # Bold
+  _CYN=$'\033[36m'     # Cyan
+  _GRN=$'\033[32m'     # Green
+  _YLW=$'\033[33m'     # Yellow
+  _RED=$'\033[31m'     # Red
+  _BLU=$'\033[34m'     # Blue
 else
   _R='' _B='' _CYN='' _GRN='' _YLW='' _RED='' _BLU=''
 fi
