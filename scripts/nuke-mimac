@@ -64,8 +64,12 @@ done
 verbose() { $VERBOSE && log "$*" || true; }
 
 if $DRY_RUN; then
-  log "DRY-RUN MODE: No changes will be made"
-  log "Use --execute to actually perform cleanup"
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  printf '%s%s  DRY-RUN MODE — Preview Only%s\n' "$_B" "$_BLU" "$_R"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo ""
+  log "No changes will be made. Use --execute to actually perform cleanup."
   echo ""
 fi
 
@@ -205,10 +209,23 @@ fi
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  nuke-mimac — Removal Summary"
+printf '%s%s  Removal Summary%s\n' "$_B" "$_YLW" "$_R"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-printf "%b" "$operations_summary"
+
+# Print operations with colored symbols
+echo "$operations_summary" | while IFS= read -r line; do
+  if [[ "$line" =~ ^✓ ]]; then
+    printf '%s  ✓ %s%s\n' "$_GRN" "${line#✓ }" "$_R"
+  elif [[ "$line" =~ ^• ]]; then
+    printf '%s  · %s%s\n' "$_CYN" "${line#• }" "$_R"
+  elif [[ "$line" =~ ^\? ]]; then
+    printf '%s  ? %s%s\n' "$_YLW" "${line#? }" "$_R"
+  else
+    echo "  $line"
+  fi
+done
+
 echo ""
 
 if $DRY_RUN; then
@@ -221,6 +238,8 @@ fi
 # ─── 8. Confirmations (execute mode) ────────────────────────────────────────
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+printf '%s%s  Confirmation Required%s\n' "$_B" "$_YLW" "$_R"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
 # First confirmation: basic cleanup
@@ -228,9 +247,11 @@ if (( ${#dotfiles_to_remove[@]} > 0 )) || \
    (( ${#tools_to_remove[@]} > 0 )) || \
    (( ${#rollback_scripts[@]} > 0 )); then
 
-  read -r -p "Remove MiMac dotfiles, tools, and restore preferences? [y/N] " ans
+  printf '%s  ▸%s Remove MiMac dotfiles, tools, and restore preferences? [y/N]: ' "$_CYN" "$_R"
+  read -r ans
   if [[ ! "$ans" =~ ^[Yy]$ ]]; then
-    log "Operation cancelled."
+    echo ""
+    warn "Operation cancelled."
     exit 0
   fi
 
@@ -245,9 +266,11 @@ if (( ${#repos_to_delete[@]} > 0 )); then
   echo ""
   log "Repositories found:"
   for repo in "${repos_to_delete[@]}"; do
-    echo "  • $repo"
+    printf '%s    • %s%s\n' "$_YLW" "$repo" "$_R"
   done
-  read -r -p "Delete these repositories? [y/N] " ans
+  echo ""
+  printf '%s  ▸%s Delete these repositories? [y/N]: ' "$_CYN" "$_R"
+  read -r ans
   if [[ "$ans" =~ ^[Yy]$ ]]; then
     do_repo_cleanup=true
   fi
@@ -259,7 +282,9 @@ if $BREW_CLEANUP && (( brew_packages_count > 0 )); then
   echo ""
   warn "This will uninstall $brew_packages_count Homebrew packages!"
   warn "This may remove packages you installed manually!"
-  read -r -p "Uninstall Homebrew packages from Brewfile? [y/N] " ans
+  echo ""
+  printf '%s  ▸%s Uninstall Homebrew packages from Brewfile? [y/N]: ' "$_CYN" "$_R"
+  read -r ans
   if [[ "$ans" =~ ^[Yy]$ ]]; then
     do_brew_cleanup=true
   fi
@@ -268,19 +293,27 @@ fi
 # Final confirmation
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-warn "FINAL CONFIRMATION: This is a DESTRUCTIVE operation!"
+printf '%s%s  ⚠  FINAL CONFIRMATION  ⚠%s\n' "$_B" "$_RED" "$_R"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+warn "This is a DESTRUCTIVE operation!"
 if $backup_created; then
-  log "Backup created at: $backup_dir"
+  ok "Backup created at: $backup_dir"
 fi
-read -r -p "Type 'NUKE' (all caps) to confirm: " confirmation
+echo ""
+printf '%s  ▸%s Type %sNUKE%s (all caps) to confirm: ' "$_CYN" "$_R" "$_B" "$_R"
+read -r confirmation
 
 if [[ "$confirmation" != "NUKE" ]]; then
-  log "Confirmation failed. Operation cancelled."
+  echo ""
+  warn "Confirmation failed. Operation cancelled."
   exit 0
 fi
 
 echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 log "Starting cleanup operations..."
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
 # ─── 9. Execute cleanup ──────────────────────────────────────────────────────
@@ -397,23 +430,25 @@ fi
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  nuke-mimac — Cleanup Complete"
+printf '%s%s  ✓ Cleanup Complete%s\n' "$_B" "$_GRN" "$_R"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-log "MiMac has been removed from your system."
+ok "MiMac has been removed from your system."
 
 if $backup_created; then
+  echo ""
   log "Backup available at: $backup_dir"
   log "To restore rollback scripts:"
-  log "  cp $backup_dir/*.sh ~/.mimac/"
+  printf '%s    %s%s\n' "$_CYN" "cp $backup_dir/*.sh ~/.mimac/" "$_R"
 fi
 
 if $do_brew_cleanup; then
-  log ""
+  echo ""
   log "To remove unused Homebrew dependencies:"
-  log "  brew autoremove"
+  printf '%s    %s%s\n' "$_CYN" "brew autoremove" "$_R"
 fi
 
 echo ""
-log "System cleanup complete."
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
