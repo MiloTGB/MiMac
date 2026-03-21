@@ -389,8 +389,42 @@ add_login_item "/Applications/Loopback.app"         || incr_failed
 # Summary                                                                     #
 ###############################################################################
 
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 if (( failed > 0 )); then
-  log "Warning: $failed post-install step(s) failed"
+  printf '%s%s  ⚠ Installation Complete (with warnings)%s\n' "$_B" "$_YLW" "$_R"
 else
-  log "Post-install complete"
+  printf '%s%s  ✓ Installation Complete%s\n' "$_B" "$_GRN" "$_R"
 fi
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+
+if (( failed > 0 )); then
+  warn "Some post-install steps failed. Check the log for details:"
+  printf '%s    %s%s\n' "$_CYN" "$LOGFILE" "$_R"
+  echo ""
+fi
+
+log "MiMac setup is complete! Here's what to do next:"
+echo ""
+printf '%s  1.%s Reload your shell:\n' "$_B" "$_R"
+printf '%s     %s%s\n' "$_CYN" "exec zsh" "$_R"
+echo ""
+printf '%s  2.%s Verify installation:\n' "$_B" "$_R"
+printf '%s     %s%s\n' "$_CYN" "make status" "$_R"
+echo ""
+printf '%s  3.%s Manual steps remaining:\n' "$_B" "$_R"
+echo "     • Mac App Store apps (Final Cut Pro, iMovie, etc.)"
+echo "     • Safari settings (sandboxed on macOS Sequoia+)"
+echo "     • Sign in to 1Password, cloud storage, etc."
+echo ""
+printf '%s  4.%s Useful commands:\n' "$_B" "$_R"
+printf '%s     %s%-20s%s — %s\n' "$_CYN" "$_R" "make sync" "$_CYN" "Sync Brewfile with installed packages$_R"
+printf '%s     %s%-20s%s — %s\n' "$_CYN" "$_R" "make snapshot-prefs" "$_CYN" "Export app preferences$_R"
+printf '%s     %s%-20s%s — %s\n' "$_CYN" "$_R" "make update" "$_CYN" "Update all packages (via topgrade)$_R"
+printf '%s     %s%-20s%s — %s\n' "$_CYN" "$_R" "make help" "$_CYN" "Show all available commands$_R"
+echo ""
+printf '%s  📖 Documentation:%s https://milotgb.github.io/MiMac/\n' "$_B" "$_R"
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
