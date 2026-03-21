@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,6 +10,8 @@
   <style>
     :root {
       --color-primary:              #0066cc;
+      --color-primary-hover:        #0052a3;
+      --color-info:                 #0891b2;
       --color-text:                 #333333;
       --color-text-secondary:       #666666;
       --color-text-tertiary:        #999999;
@@ -18,23 +20,42 @@
       --color-background:           #ffffff;
       --color-background-secondary: #f8f9fa;
       --color-background-tertiary:  #f1f3f4;
+      --color-page-bg:              #e8ecf0;
       --color-danger:               #dc3545;
       --color-warning-dark:         #7a5500;
+      --color-code-bg:              #1e293b;
+      --color-code-text:            #e2e8f0;
       --font-family-base: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
       --font-family-mono: "JetBrains Mono", "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas, "Courier New", monospace;
       --sidebar-width: 300px;
     }
 
+    /* Dark mode colors */
+    [data-theme="dark"] {
+      --color-text:                 #e2e8f0;
+      --color-text-secondary:       #94a3b8;
+      --color-text-tertiary:        #64748b;
+      --color-border:               #475569;
+      --color-border-light:         #334155;
+      --color-background:           #1e293b;
+      --color-background-secondary: #0f172a;
+      --color-background-tertiary:  #334155;
+      --color-page-bg:              #0f172a;
+      --color-code-bg:              #0f172a;
+      --color-code-text:            #e2e8f0;
+    }
+
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html { scroll-behavior: smooth; }
+    html { scroll-behavior: smooth; scroll-padding-top: 120px; }
 
     body {
       font-family: var(--font-family-base);
       font-size: 16px;
-      background: #e8ecf0;
+      background: var(--color-page-bg);
       color: var(--color-text);
       line-height: 1.6;
       overflow-x: hidden;
+      transition: background-color 0.3s ease, color 0.3s ease;
     }
 
     /* Fixed Header Layout */
@@ -67,11 +88,13 @@
       z-index: 100;
       display: flex;
       flex-direction: column;
+      transition: background-color 0.3s ease;
     }
     .nav-header {
       padding: 1.5rem 1rem 1rem;
       border-bottom: 1px solid var(--color-border);
       background: var(--color-background);
+      transition: background-color 0.3s ease;
     }
     .nav-to-num {
       font-family: var(--font-family-mono);
@@ -91,6 +114,32 @@
       letter-spacing: 0.5px;
       text-transform: uppercase;
     }
+
+    /* Search box */
+    .nav-search {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--color-border);
+      background: var(--color-background);
+    }
+    .nav-search input {
+      width: 100%;
+      padding: 0.5rem 0.75rem;
+      border: 1px solid var(--color-border);
+      border-radius: 4px;
+      font-size: 0.85rem;
+      font-family: var(--font-family-base);
+      background: var(--color-background);
+      color: var(--color-text);
+      transition: border-color 0.2s ease;
+    }
+    .nav-search input:focus {
+      outline: none;
+      border-color: var(--color-primary);
+    }
+    .nav-search input::placeholder {
+      color: var(--color-text-tertiary);
+    }
+
     nav a.section-head {
       display: block;
       padding: 0.75rem 1rem 0.2rem;
@@ -116,6 +165,15 @@
       border-left-color: var(--color-primary);
       color: var(--color-primary);
     }
+    nav a:not(.section-head).active {
+      background: var(--color-background-tertiary);
+      border-left-color: var(--color-primary);
+      color: var(--color-primary);
+      font-weight: 500;
+    }
+    nav a.search-hidden {
+      display: none;
+    }
 
     /* ─── Page wrapper ────────────────────────────────────────── */
     main {
@@ -123,7 +181,7 @@
       margin-left: var(--sidebar-width);
       height: calc(100vh - 100px);
       overflow-y: auto;
-      background: #e8ecf0;
+      background: var(--color-page-bg);
       min-width: 0;
       display: flex;
       flex-direction: column;
@@ -156,7 +214,30 @@
     .masthead-meta {
       flex: 1;
       text-align: right;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 1rem;
     }
+
+    /* Theme toggle button */
+    .theme-toggle {
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      color: #fff;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.75rem;
+      transition: background 0.2s ease;
+      font-family: var(--font-family-mono);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .theme-toggle:hover {
+      background: rgba(255,255,255,0.2);
+    }
+
     .doc-infobar {
       display: flex;
       background-color: #e2e8f0;
@@ -195,6 +276,15 @@
     }
 
     section { margin-bottom: 3rem; }
+
+    /* Anchor target highlighting */
+    section:target {
+      animation: highlight-section 1.5s ease;
+    }
+    @keyframes highlight-section {
+      0%, 100% { background: transparent; }
+      50% { background: rgba(0, 102, 204, 0.05); }
+    }
 
     .section-heading {
       display: flex;
@@ -238,28 +328,69 @@
       padding: 1px 5px;
       border-radius: 3px;
     }
+
+    /* Code blocks with copy button */
+    .code-block-wrapper {
+      position: relative;
+      margin-bottom: 0.75rem;
+    }
     pre {
       font-family: var(--font-family-mono);
       font-size: 0.875rem;
-      background: #1e293b;
-      color: #e2e8f0;
+      background: var(--color-code-bg);
+      color: var(--color-code-text);
       border: none;
       padding: 0.75rem 1rem;
       overflow-x: auto;
-      margin-bottom: 0.75rem;
       line-height: 1.5;
       border-radius: 4px;
+      margin: 0;
     }
-    pre code { background: none; border: none; padding: 0; color: inherit; }
+    pre code {
+      background: none;
+      border: none;
+      padding: 0;
+      color: inherit;
+    }
+
+    .copy-button {
+      position: absolute;
+      top: 0.5rem;
+      right: 0.5rem;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      color: var(--color-code-text);
+      padding: 0.25rem 0.5rem;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 0.7rem;
+      font-family: var(--font-family-mono);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      opacity: 0;
+      transition: opacity 0.2s ease, background 0.2s ease;
+    }
+    .code-block-wrapper:hover .copy-button {
+      opacity: 1;
+    }
+    .copy-button:hover {
+      background: rgba(255,255,255,0.2);
+    }
+    .copy-button.copied {
+      background: #10b981;
+      border-color: #10b981;
+      color: #fff;
+    }
 
     /* ─── Procedure blocks ────────────────────────────────────── */
     .proc {
-      border: 1px solid #aaa;
+      border: 1px solid var(--color-border);
       border-top: 3px solid var(--color-primary);
       margin-bottom: 2rem;
       border-radius: 0 0 3px 3px;
       overflow: hidden;
       box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+      background: var(--color-background);
     }
     .proc-header {
       background: var(--color-background-secondary);
@@ -275,6 +406,10 @@
       font-weight: 500;
       color: var(--color-text-secondary);
       min-width: 38px;
+      background: var(--color-primary);
+      color: #fff;
+      padding: 0.125rem 0.375rem;
+      border-radius: 3px;
     }
     .proc-header h3 {
       font-size: 0.95rem;
@@ -292,7 +427,14 @@
     }
     .proc-body ul  { font-size: 0.9rem; }
     .proc-body ol  { font-size: 0.9rem; }
-    .proc-body pre { margin-bottom: 0.625rem; }
+    .proc-body ol > li {
+      margin-bottom: 1rem;
+      position: relative;
+    }
+    .proc-body ol > li::marker {
+      font-weight: 600;
+      color: var(--color-primary);
+    }
 
     /* ─── Callout boxes ───────────────────────────────────────── */
     .callout {
@@ -301,6 +443,7 @@
       margin: 0.875rem 0;
       border-radius: 0 3px 3px 0;
       overflow: hidden;
+      background: var(--color-background);
     }
     .callout-label {
       display: block;
@@ -324,6 +467,10 @@
       background: #fdf2f2;
       color: var(--color-danger);
     }
+    [data-theme="dark"] .callout-warn .callout-label {
+      background: rgba(220, 53, 69, 0.15);
+      color: #f87171;
+    }
     .callout-caution {
       border-left-color: #e6a800;
     }
@@ -331,16 +478,35 @@
       background: #fffdf0;
       color: var(--color-warning-dark);
     }
+    [data-theme="dark"] .callout-caution .callout-label {
+      background: rgba(230, 168, 0, 0.15);
+      color: #fbbf24;
+    }
+    .callout-info {
+      border-left-color: var(--color-info);
+    }
+    .callout-info .callout-label {
+      background: #f0f9ff;
+      color: var(--color-info);
+    }
+    [data-theme="dark"] .callout-info .callout-label {
+      background: rgba(8, 145, 178, 0.15);
+      color: #06b6d4;
+    }
 
     /* ─── Tables ──────────────────────────────────────────────── */
+    .table-wrapper {
+      overflow-x: auto;
+      margin-bottom: 1rem;
+      border-radius: 3px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
     .ref-table {
       width: 100%;
       border-collapse: collapse;
       border: 1px solid var(--color-border);
-      margin-bottom: 1rem;
       font-size: 0.9rem;
-      border-radius: 3px;
-      overflow: hidden;
+      background: var(--color-background);
     }
     .ref-table caption {
       caption-side: top;
@@ -363,6 +529,7 @@
       border-right: 1px solid var(--color-border-light);
       background: var(--color-background-tertiary);
       color: var(--color-text-secondary);
+      white-space: nowrap;
     }
     .ref-table th:last-child { border-right: none; }
     .ref-table td {
@@ -378,6 +545,7 @@
       font-size: 0.85rem;
       white-space: nowrap;
       font-weight: 500;
+      background: var(--color-background-secondary);
     }
 
     /* ─── Footer ──────────────────────────────────────────────── */
@@ -393,6 +561,43 @@
       letter-spacing: 0.05em;
       color: var(--color-text-tertiary);
       background: var(--color-background-secondary);
+    }
+
+    /* ─── Print Styles ────────────────────────────────────────── */
+    @media print {
+      body {
+        background: white;
+        color: black;
+      }
+      .main-header,
+      nav,
+      .theme-toggle,
+      .copy-button,
+      .doc-footer {
+        display: none;
+      }
+      main {
+        margin-left: 0;
+        height: auto;
+      }
+      .layout {
+        padding-top: 0;
+      }
+      section {
+        page-break-inside: avoid;
+      }
+      .proc {
+        page-break-inside: avoid;
+      }
+      a {
+        color: #0066cc;
+        text-decoration: underline;
+      }
+      pre {
+        background: #f5f5f5;
+        color: #000;
+        border: 1px solid #ddd;
+      }
     }
 
     /* ─── Responsive ──────────────────────────────────────────── */
@@ -414,6 +619,7 @@
       .masthead-meta {
         flex: none;
         text-align: center;
+        justify-content: center;
       }
       .doc-infobar {
         flex-wrap: wrap;
@@ -439,6 +645,7 @@
         overflow-x: auto;
       }
       .nav-header { display: none; }
+      .nav-search { display: none; }
       nav a.section-head { display: none; }
       nav a:not(.section-head) { white-space: nowrap; padding: 4px 10px; }
 
@@ -449,6 +656,14 @@
 
       .content { padding: 1.75rem 1.25rem 3.75rem; }
       .doc-footer { padding: 0.625rem 1.25rem; }
+
+      .ref-table {
+        font-size: 0.8rem;
+      }
+      .ref-table th,
+      .ref-table td {
+        padding: 5px 8px;
+      }
     }
   </style>
 </head>
@@ -459,7 +674,12 @@
   <div class="doc-masthead">
     <div class="masthead-org">Personal Systems Branch / macOS Bootstrap</div>
     <div class="masthead-center">TECHNICAL MANUAL / <strong>MiMac — macOS Bootstrap</strong></div>
-    <div class="masthead-meta">MIMAC-1 / PAGES: N/A</div>
+    <div class="masthead-meta">
+      <span>MIMAC-1 / PAGES: N/A</span>
+      <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle dark mode">
+        <span class="theme-icon">☀️</span>
+      </button>
+    </div>
   </div>
   <div class="doc-infobar">
     <div class="infobar-cell">
@@ -475,29 +695,32 @@
 
 <div class="layout">
 
-<nav>
+<nav id="sidebar-nav">
   <div class="nav-header">
     <span class="nav-to-num">MIMAC-1</span>
     <span class="nav-title">MiMac<br>Bootstrap Manual</span>
   </div>
+  <div class="nav-search">
+    <input type="text" id="search-input" placeholder="Search documentation..." aria-label="Search">
+  </div>
   <a class="section-head">Sect. 1 — Overview</a>
-  <a href="#overview">1. Overview</a>
-  <a href="#architecture">1.1 Architecture</a>
+  <a href="#overview" data-section="overview">1. Overview</a>
+  <a href="#architecture" data-section="architecture">1.1 Architecture</a>
   <a class="section-head">Sect. 2 — Install</a>
-  <a href="#phase1">2.1 Phase 1 — Setup</a>
-  <a href="#phase2">2.2 Phase 2 — Homebrew</a>
-  <a href="#phase3">2.3 Phase 3 — Post-Install</a>
-  <a href="#full-install">2.4 Full Install</a>
+  <a href="#phase1" data-section="phase1">2.1 Phase 1 — Setup</a>
+  <a href="#phase2" data-section="phase2">2.2 Phase 2 — Homebrew</a>
+  <a href="#phase3" data-section="phase3">2.3 Phase 3 — Post-Install</a>
+  <a href="#full-install" data-section="full-install">2.4 Full Install</a>
   <a class="section-head">Sect. 3 — Workflow</a>
-  <a href="#sync">3.1 Brewfile Sync</a>
-  <a href="#snapshot">3.2 Snapshot Prefs</a>
-  <a href="#pull-prefs">3.3 Pull Prefs</a>
+  <a href="#sync" data-section="sync">3.1 Brewfile Sync</a>
+  <a href="#snapshot" data-section="snapshot">3.2 Snapshot Prefs</a>
+  <a href="#pull-prefs" data-section="pull-prefs">3.3 Pull Prefs</a>
   <a class="section-head">Sect. 4 — Migration</a>
-  <a href="#pre-migration">4.1 Pre-Migration</a>
-  <a href="#new-machine">4.2 New Machine Setup</a>
+  <a href="#pre-migration" data-section="pre-migration">4.1 Pre-Migration</a>
+  <a href="#new-machine" data-section="new-machine">4.2 New Machine Setup</a>
   <a class="section-head">Sect. 5 — Reference</a>
-  <a href="#commands">5.1 Command Reference</a>
-  <a href="#troubleshooting">5.2 Troubleshooting</a>
+  <a href="#commands" data-section="commands">5.1 Command Reference</a>
+  <a href="#troubleshooting" data-section="troubleshooting">5.2 Troubleshooting</a>
 </nav>
 
 <main>
@@ -519,32 +742,39 @@
     </div>
   </div>
 
-  <table class="ref-table">
-    <caption>Key Repositories</caption>
-    <thead>
-      <tr>
-        <th>Repo</th>
-        <th>Location</th>
-        <th>Purpose</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td>MiloTGB/MiMac</td>
-        <td>~/MiMac</td>
-        <td>Public bootstrap repo</td>
-      </tr>
-      <tr>
-        <td>MiloTGB/mimac-prefs</td>
-        <td>~/.mimac/preferences/</td>
-        <td>Private app preferences</td>
-      </tr>
-    </tbody>
-  </table>
+  <div class="table-wrapper">
+    <table class="ref-table">
+      <caption>Key Repositories</caption>
+      <thead>
+        <tr>
+          <th>Repo</th>
+          <th>Location</th>
+          <th>Purpose</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>MiloTGB/MiMac</td>
+          <td>~/MiMac</td>
+          <td>Public bootstrap repo</td>
+        </tr>
+        <tr>
+          <td>MiloTGB/mimac-prefs</td>
+          <td>~/.mimac/preferences/</td>
+          <td>Private app preferences</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
 
   <p>The two-repo split keeps personal preference data (iTerm2 profiles, Audio Hijack settings, etc.) out of the public repo while still making them fully portable across machines.</p>
 
-  <p>As long as both repos are kept current, the entire setup can be fully restored on a new machine from scratch — nothing needs to be manually transferred. The repos are the source of truth.</p>
+  <div class="callout callout-info">
+    <span class="callout-label">Source of Truth</span>
+    <div class="callout-body">
+      <p>As long as both repos are kept current, the entire setup can be fully restored on a new machine from scratch — nothing needs to be manually transferred. The repos are the source of truth.</p>
+    </div>
+  </div>
 </section>
 
 <section id="architecture">
@@ -555,32 +785,34 @@
 
   <p>MiMac follows a three-phase installation process:</p>
 
-  <table class="ref-table">
-    <thead>
-      <tr>
-        <th>Phase</th>
-        <th>Command</th>
-        <th>Purpose</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td>Setup</td>
-        <td>make setup</td>
-        <td>Dotfiles, tools, macOS defaults</td>
-      </tr>
-      <tr>
-        <td>Homebrew</td>
-        <td>make brew</td>
-        <td>Install packages from Brewfile</td>
-      </tr>
-      <tr>
-        <td>Post-Install</td>
-        <td>make post-install</td>
-        <td>Configure apps, restore preferences</td>
-      </tr>
-    </tbody>
-  </table>
+  <div class="table-wrapper">
+    <table class="ref-table">
+      <thead>
+        <tr>
+          <th>Phase</th>
+          <th>Command</th>
+          <th>Purpose</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Setup</td>
+          <td>make setup</td>
+          <td>Dotfiles, tools, macOS defaults</td>
+        </tr>
+        <tr>
+          <td>Homebrew</td>
+          <td>make brew</td>
+          <td>Install packages from Brewfile</td>
+        </tr>
+        <tr>
+          <td>Post-Install</td>
+          <td>make post-install</td>
+          <td>Configure apps, restore preferences</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
 
   <p>Managed dotfiles include <code>.aliases</code>, <code>.gitconfig</code>, <code>.zshrc</code>, <code>.zprofile</code>, <code>.zshenv</code>, and a home <code>Makefile</code> for convenient command access.</p>
 </section>
@@ -613,54 +845,59 @@
       </ul>
 
       <p><strong>Usage:</strong></p>
-      <pre><code>make setup               # Full setup
+      <div class="code-block-wrapper">
+        <button class="copy-button" onclick="copyCode(this)">Copy</button>
+        <pre><code>make setup               # Full setup
 make setup --dry-run     # Preview changes
 make dotfiles            # Link dotfiles only
 make tools               # Link scripts/bin only
 make defaults            # Apply macOS defaults only
 make trackpad            # Include trackpad settings</code></pre>
+      </div>
     </div>
   </div>
 
-  <table class="ref-table">
-    <caption>Managed Dotfiles</caption>
-    <thead>
-      <tr>
-        <th>File</th>
-        <th>Purpose</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td>.aliases</td>
-        <td>Shell aliases and functions</td>
-      </tr>
-      <tr>
-        <td>.gitconfig</td>
-        <td>Git configuration</td>
-      </tr>
-      <tr>
-        <td>.hushlogin</td>
-        <td>Suppresses "Last login" terminal message</td>
-      </tr>
-      <tr>
-        <td>.zprofile</td>
-        <td>Zsh login shell profile</td>
-      </tr>
-      <tr>
-        <td>.zshenv</td>
-        <td>Zsh environment variables</td>
-      </tr>
-      <tr>
-        <td>.zshrc</td>
-        <td>Zsh interactive shell config (with lazy-loading NVM)</td>
-      </tr>
-      <tr>
-        <td>Makefile</td>
-        <td>MiMac commands available from ~/</td>
-      </tr>
-    </tbody>
-  </table>
+  <div class="table-wrapper">
+    <table class="ref-table">
+      <caption>Managed Dotfiles</caption>
+      <thead>
+        <tr>
+          <th>File</th>
+          <th>Purpose</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>.aliases</td>
+          <td>Shell aliases and functions</td>
+        </tr>
+        <tr>
+          <td>.gitconfig</td>
+          <td>Git configuration</td>
+        </tr>
+        <tr>
+          <td>.hushlogin</td>
+          <td>Suppresses "Last login" terminal message</td>
+        </tr>
+        <tr>
+          <td>.zprofile</td>
+          <td>Zsh login shell profile</td>
+        </tr>
+        <tr>
+          <td>.zshenv</td>
+          <td>Zsh environment variables</td>
+        </tr>
+        <tr>
+          <td>.zshrc</td>
+          <td>Zsh interactive shell config (with lazy-loading NVM)</td>
+        </tr>
+        <tr>
+          <td>Makefile</td>
+          <td>MiMac commands available from ~/</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
 </section>
 
 <section id="phase2">
@@ -687,7 +924,10 @@ make trackpad            # Include trackpad settings</code></pre>
       </ul>
 
       <p><strong>Usage:</strong></p>
-      <pre><code>make brew</code></pre>
+      <div class="code-block-wrapper">
+        <button class="copy-button" onclick="copyCode(this)">Copy</button>
+        <pre><code>make brew</code></pre>
+      </div>
     </div>
   </div>
 </section>
@@ -719,61 +959,66 @@ make trackpad            # Include trackpad settings</code></pre>
       </ul>
 
       <p><strong>Usage:</strong></p>
-      <pre><code>make post-install</code></pre>
+      <div class="code-block-wrapper">
+        <button class="copy-button" onclick="copyCode(this)">Copy</button>
+        <pre><code>make post-install</code></pre>
+      </div>
     </div>
   </div>
 
-  <table class="ref-table">
-    <caption>Managed App Preferences</caption>
-    <thead>
-      <tr>
-        <th>App</th>
-        <th>Configuration</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td>iTerm2</td>
-        <td>Plist imported</td>
-      </tr>
-      <tr>
-        <td>Loopback</td>
-        <td>Plist + App Support files</td>
-      </tr>
-      <tr>
-        <td>SoundSource</td>
-        <td>Plist + App Support files</td>
-      </tr>
-      <tr>
-        <td>Audio Hijack</td>
-        <td>Plist imported</td>
-      </tr>
-      <tr>
-        <td>BetterSnapTool</td>
-        <td>Plist imported</td>
-      </tr>
-      <tr>
-        <td>Ice</td>
-        <td>Plist imported</td>
-      </tr>
-      <tr>
-        <td>Raycast</td>
-        <td>Plist imported</td>
-      </tr>
-      <tr>
-        <td>Stats</td>
-        <td>Plist imported</td>
-      </tr>
-      <tr>
-        <td>Farrago</td>
-        <td>Plist imported</td>
-      </tr>
-      <tr>
-        <td>Piezo</td>
-        <td>Plist imported</td>
-      </tr>
-    </tbody>
-  </table>
+  <div class="table-wrapper">
+    <table class="ref-table">
+      <caption>Managed App Preferences</caption>
+      <thead>
+        <tr>
+          <th>App</th>
+          <th>Configuration</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>iTerm2</td>
+          <td>Plist imported</td>
+        </tr>
+        <tr>
+          <td>Loopback</td>
+          <td>Plist + App Support files</td>
+        </tr>
+        <tr>
+          <td>SoundSource</td>
+          <td>Plist + App Support files</td>
+        </tr>
+        <tr>
+          <td>Audio Hijack</td>
+          <td>Plist imported</td>
+        </tr>
+        <tr>
+          <td>BetterSnapTool</td>
+          <td>Plist imported</td>
+        </tr>
+        <tr>
+          <td>Ice</td>
+          <td>Plist imported</td>
+        </tr>
+        <tr>
+          <td>Raycast</td>
+          <td>Plist imported</td>
+        </tr>
+        <tr>
+          <td>Stats</td>
+          <td>Plist imported</td>
+        </tr>
+        <tr>
+          <td>Farrago</td>
+          <td>Plist imported</td>
+        </tr>
+        <tr>
+          <td>Piezo</td>
+          <td>Plist imported</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
 </section>
 
 <section id="full-install">
@@ -784,8 +1029,11 @@ make trackpad            # Include trackpad settings</code></pre>
 
   <p>Run all three phases in sequence:</p>
 
-  <pre><code>make all        # Runs setup + brew + post-install
+  <div class="code-block-wrapper">
+    <button class="copy-button" onclick="copyCode(this)">Copy</button>
+    <pre><code>make all        # Runs setup + brew + post-install
 exec zsh        # Reload shell after setup</code></pre>
+  </div>
 </section>
 
 <!-- SECTION 3: WORKFLOW -->
@@ -818,13 +1066,16 @@ exec zsh        # Reload shell after setup</code></pre>
       </ol>
 
       <p><strong>Usage:</strong></p>
-      <pre><code>make sync              # Interactive selection
+      <div class="code-block-wrapper">
+        <button class="copy-button" onclick="copyCode(this)">Copy</button>
+        <pre><code>make sync              # Interactive selection
 make sync ARGS=-n      # Dry run preview
 make sync ARGS=-c      # Auto-commit after update
 make sync ARGS="-p"    # Prune stale packages
 make sync ARGS="-p -n" # Prune dry-run</code></pre>
+      </div>
 
-      <div class="callout">
+      <div class="callout callout-info">
         <span class="callout-label">New: Prune Mode</span>
         <div class="callout-body">
           <p>The <code>--prune</code> flag detects packages in the Brewfile that are no longer installed and offers to remove them. Use <code>-n</code> for a safe preview.</p>
@@ -860,7 +1111,10 @@ make sync ARGS="-p -n" # Prune dry-run</code></pre>
       </ul>
 
       <p><strong>Usage:</strong></p>
-      <pre><code>make snapshot-prefs</code></pre>
+      <div class="code-block-wrapper">
+        <button class="copy-button" onclick="copyCode(this)">Copy</button>
+        <pre><code>make snapshot-prefs</code></pre>
+      </div>
 
       <p><em>Note: Snapshots are idempotent — if nothing changed, it reports "No changes to push."</em></p>
     </div>
@@ -876,9 +1130,12 @@ make sync ARGS="-p -n" # Prune dry-run</code></pre>
 
   <p>Clones <code>mimac-prefs</code> into <code>~/.mimac/preferences/</code> if it doesn't exist, or fast-forward pulls if it does.</p>
 
-  <pre><code>make pull-prefs</code></pre>
+  <div class="code-block-wrapper">
+    <button class="copy-button" onclick="copyCode(this)">Copy</button>
+    <pre><code>make pull-prefs</code></pre>
+  </div>
 
-  <div class="callout">
+  <div class="callout callout-info">
     <span class="callout-label">Automatic Pull</span>
     <div class="callout-body">
       <p><code>make post-install</code> does this automatically if <code>~/.mimac/preferences/</code> is absent and your SSH key is authenticated with GitHub.</p>
@@ -902,24 +1159,41 @@ make sync ARGS="-p -n" # Prune dry-run</code></pre>
     </div>
     <div class="proc-body">
       <ol>
-        <li><strong>Sync the Brewfile:</strong>
-          <pre><code>make sync ARGS=-c</code></pre>
+        <li>
+          <strong>Sync the Brewfile:</strong>
+          <div class="code-block-wrapper">
+            <button class="copy-button" onclick="copyCode(this)">Copy</button>
+            <pre><code>make sync ARGS=-c</code></pre>
+          </div>
         </li>
-        <li><strong>Snapshot app preferences:</strong>
-          <pre><code>make snapshot-prefs</code></pre>
+        <li>
+          <strong>Snapshot app preferences:</strong>
+          <div class="code-block-wrapper">
+            <button class="copy-button" onclick="copyCode(this)">Copy</button>
+            <pre><code>make snapshot-prefs</code></pre>
+          </div>
           <p>Verify the push succeeded — you should see "Pushed to git@github.com:MiloTGB/mimac-prefs.git"</p>
         </li>
-        <li><strong>Push any pending MiMac changes:</strong>
-          <pre><code>cd ~/MiMac
+        <li>
+          <strong>Push any pending MiMac changes:</strong>
+          <div class="code-block-wrapper">
+            <button class="copy-button" onclick="copyCode(this)">Copy</button>
+            <pre><code>cd ~/MiMac
 git status
 git push</code></pre>
+          </div>
         </li>
-        <li><strong>Verify SSH authentication:</strong>
-          <pre><code>ssh -T git@github.com
+        <li>
+          <strong>Verify SSH authentication:</strong>
+          <div class="code-block-wrapper">
+            <button class="copy-button" onclick="copyCode(this)">Copy</button>
+            <pre><code>ssh -T git@github.com
 # Expected: Hi MiloTGB! You've successfully authenticated...</code></pre>
+          </div>
           <p>The new machine needs your SSH key to auto-pull mimac-prefs.</p>
         </li>
-        <li><strong>Note anything not covered by MiMac:</strong>
+        <li>
+          <strong>Note anything not covered by MiMac:</strong>
           <ul>
             <li>App Store apps (reinstall from Purchases)</li>
             <li>Software licenses</li>
@@ -945,19 +1219,35 @@ git push</code></pre>
     </div>
     <div class="proc-body">
       <ol>
-        <li><strong>Clone the MiMac repository:</strong>
-          <pre><code>cd ~
+        <li>
+          <strong>Clone the MiMac repository:</strong>
+          <div class="code-block-wrapper">
+            <button class="copy-button" onclick="copyCode(this)">Copy</button>
+            <pre><code>cd ~
 git clone git@github.com:MiloTGB/MiMac.git
 cd MiMac</code></pre>
+          </div>
         </li>
-        <li><strong>Run the full installation:</strong>
-          <pre><code>make all</code></pre>
+        <li>
+          <strong>Run the full installation:</strong>
+          <div class="code-block-wrapper">
+            <button class="copy-button" onclick="copyCode(this)">Copy</button>
+            <pre><code>make all</code></pre>
+          </div>
         </li>
-        <li><strong>Reload your shell:</strong>
-          <pre><code>exec zsh</code></pre>
+        <li>
+          <strong>Reload your shell:</strong>
+          <div class="code-block-wrapper">
+            <button class="copy-button" onclick="copyCode(this)">Copy</button>
+            <pre><code>exec zsh</code></pre>
+          </div>
         </li>
-        <li><strong>Verify everything works:</strong>
-          <pre><code>make doctor</code></pre>
+        <li>
+          <strong>Verify everything works:</strong>
+          <div class="code-block-wrapper">
+            <button class="copy-button" onclick="copyCode(this)">Copy</button>
+            <pre><code>make doctor</code></pre>
+          </div>
         </li>
       </ol>
     </div>
@@ -978,89 +1268,91 @@ cd MiMac</code></pre>
     <h2>Command Reference</h2>
   </div>
 
-  <table class="ref-table">
-    <caption>Make Targets</caption>
-    <thead>
-      <tr>
-        <th>Command</th>
-        <th>Description</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td>make all</td>
-        <td>Full install (setup + brew + post-install)</td>
-      </tr>
-      <tr>
-        <td>make setup</td>
-        <td>Phase 1: shell, dotfiles, macOS defaults</td>
-      </tr>
-      <tr>
-        <td>make brew</td>
-        <td>Phase 2: install Homebrew packages</td>
-      </tr>
-      <tr>
-        <td>make post-install</td>
-        <td>Phase 3: configure apps and login items</td>
-      </tr>
-      <tr>
-        <td>make sync</td>
-        <td>Update Brewfile with new packages</td>
-      </tr>
-      <tr>
-        <td>make snapshot-prefs</td>
-        <td>Export and push app preferences</td>
-      </tr>
-      <tr>
-        <td>make pull-prefs</td>
-        <td>Clone or pull app preferences</td>
-      </tr>
-      <tr>
-        <td>make dotfiles</td>
-        <td>Link dotfiles only</td>
-      </tr>
-      <tr>
-        <td>make tools</td>
-        <td>Link scripts/bin only</td>
-      </tr>
-      <tr>
-        <td>make defaults</td>
-        <td>Apply macOS defaults</td>
-      </tr>
-      <tr>
-        <td>make trackpad</td>
-        <td>Apply defaults including trackpad</td>
-      </tr>
-      <tr>
-        <td>make uninstall</td>
-        <td>Remove symlinks and undo setup</td>
-      </tr>
-      <tr>
-        <td>make nuke</td>
-        <td>Complete removal (dry-run by default)</td>
-      </tr>
-      <tr>
-        <td>make doctor</td>
-        <td>Run diagnostics</td>
-      </tr>
-      <tr>
-        <td>make status</td>
-        <td>Show installation status</td>
-      </tr>
-      <tr>
-        <td>make update</td>
-        <td>Upgrade all packages (topgrade)</td>
-      </tr>
-      <tr>
-        <td>make harden</td>
-        <td>Apply security hardening</td>
-      </tr>
-      <tr>
-        <td>make manual</td>
-        <td>Regenerate this documentation</td>
-      </tr>
-    </tbody>
-  </table>
+  <div class="table-wrapper">
+    <table class="ref-table">
+      <caption>Make Targets</caption>
+      <thead>
+        <tr>
+          <th>Command</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>make all</td>
+          <td>Full install (setup + brew + post-install)</td>
+        </tr>
+        <tr>
+          <td>make setup</td>
+          <td>Phase 1: shell, dotfiles, macOS defaults</td>
+        </tr>
+        <tr>
+          <td>make brew</td>
+          <td>Phase 2: install Homebrew packages</td>
+        </tr>
+        <tr>
+          <td>make post-install</td>
+          <td>Phase 3: configure apps and login items</td>
+        </tr>
+        <tr>
+          <td>make sync</td>
+          <td>Update Brewfile with new packages</td>
+        </tr>
+        <tr>
+          <td>make snapshot-prefs</td>
+          <td>Export and push app preferences</td>
+        </tr>
+        <tr>
+          <td>make pull-prefs</td>
+          <td>Clone or pull app preferences</td>
+        </tr>
+        <tr>
+          <td>make dotfiles</td>
+          <td>Link dotfiles only</td>
+        </tr>
+        <tr>
+          <td>make tools</td>
+          <td>Link scripts/bin only</td>
+        </tr>
+        <tr>
+          <td>make defaults</td>
+          <td>Apply macOS defaults</td>
+        </tr>
+        <tr>
+          <td>make trackpad</td>
+          <td>Apply defaults including trackpad</td>
+        </tr>
+        <tr>
+          <td>make uninstall</td>
+          <td>Remove symlinks and undo setup</td>
+        </tr>
+        <tr>
+          <td>make nuke</td>
+          <td>Complete removal (dry-run by default)</td>
+        </tr>
+        <tr>
+          <td>make doctor</td>
+          <td>Run diagnostics</td>
+        </tr>
+        <tr>
+          <td>make status</td>
+          <td>Show installation status</td>
+        </tr>
+        <tr>
+          <td>make update</td>
+          <td>Upgrade all packages (topgrade)</td>
+        </tr>
+        <tr>
+          <td>make harden</td>
+          <td>Apply security hardening</td>
+        </tr>
+        <tr>
+          <td>make manual</td>
+          <td>Regenerate this documentation</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
 </section>
 
 <section id="troubleshooting">
@@ -1073,25 +1365,37 @@ cd MiMac</code></pre>
     <span class="callout-label">Common Issues</span>
     <div class="callout-body">
       <p><strong>Homebrew permission errors:</strong></p>
-      <pre><code>make fix-exec
+      <div class="code-block-wrapper">
+        <button class="copy-button" onclick="copyCode(this)">Copy</button>
+        <pre><code>make fix-exec
 sudo chown -R $(whoami) $(brew --prefix)/*</code></pre>
+      </div>
 
       <p><strong>Symlink conflicts:</strong></p>
-      <pre><code>make uninstall  # Remove existing symlinks
+      <div class="code-block-wrapper">
+        <button class="copy-button" onclick="copyCode(this)">Copy</button>
+        <pre><code>make uninstall  # Remove existing symlinks
 make setup      # Re-link dotfiles</code></pre>
+      </div>
 
       <p><strong>Preferences not importing:</strong></p>
       <p>Ensure <code>~/.mimac/preferences/</code> exists and contains plists. Run <code>make pull-prefs</code> to clone the repo.</p>
 
       <p><strong>SSH authentication failed:</strong></p>
-      <pre><code>ssh -T git@github.com
+      <div class="code-block-wrapper">
+        <button class="copy-button" onclick="copyCode(this)">Copy</button>
+        <pre><code>ssh -T git@github.com
 # Add your SSH key to GitHub if needed</code></pre>
+      </div>
     </div>
   </div>
 
   <p>For diagnostic information, run:</p>
-  <pre><code>make doctor
+  <div class="code-block-wrapper">
+    <button class="copy-button" onclick="copyCode(this)">Copy</button>
+    <pre><code>make doctor
 make status</code></pre>
+  </div>
 </section>
 
 </div>
@@ -1105,6 +1409,133 @@ make status</code></pre>
 </main>
 
 </div>
+
+<script>
+// ─── Theme Toggle ──────────────────────────────────────────────
+function toggleTheme() {
+  const html = document.documentElement;
+  const currentTheme = html.getAttribute('data-theme');
+  const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+
+  html.setAttribute('data-theme', newTheme);
+  localStorage.setItem('theme', newTheme);
+
+  // Update icon
+  const icon = document.querySelector('.theme-icon');
+  icon.textContent = newTheme === 'dark' ? '🌙' : '☀️';
+}
+
+// Load saved theme
+(function() {
+  const savedTheme = localStorage.getItem('theme') || 'light';
+  document.documentElement.setAttribute('data-theme', savedTheme);
+  const icon = document.querySelector('.theme-icon');
+  if (icon) {
+    icon.textContent = savedTheme === 'dark' ? '🌙' : '☀️';
+  }
+})();
+
+// ─── Copy Code Buttons ─────────────────────────────────────────
+function copyCode(button) {
+  const wrapper = button.closest('.code-block-wrapper');
+  const code = wrapper.querySelector('pre code');
+  const text = code.textContent;
+
+  navigator.clipboard.writeText(text).then(() => {
+    const originalText = button.textContent;
+    button.textContent = 'Copied!';
+    button.classList.add('copied');
+
+    setTimeout(() => {
+      button.textContent = originalText;
+      button.classList.remove('copied');
+    }, 2000);
+  });
+}
+
+// ─── Scroll Spy Navigation ────────────────────────────────────
+function updateActiveSection() {
+  const sections = document.querySelectorAll('section[id]');
+  const navLinks = document.querySelectorAll('nav a[data-section]');
+
+  let currentSection = '';
+
+  sections.forEach(section => {
+    const sectionTop = section.offsetTop - 150;
+    const sectionHeight = section.clientHeight;
+
+    if (window.scrollY >= sectionTop && window.scrollY < sectionTop + sectionHeight) {
+      currentSection = section.getAttribute('id');
+    }
+  });
+
+  navLinks.forEach(link => {
+    link.classList.remove('active');
+    if (link.getAttribute('data-section') === currentSection) {
+      link.classList.add('active');
+    }
+  });
+}
+
+// Scroll spy on main content area
+const main = document.querySelector('main');
+if (main) {
+  main.addEventListener('scroll', updateActiveSection);
+  // Initial check
+  setTimeout(updateActiveSection, 100);
+}
+
+// ─── Search Functionality ──────────────────────────────────────
+const searchInput = document.getElementById('search-input');
+const navLinks = document.querySelectorAll('nav a:not(.section-head)');
+const sections = document.querySelectorAll('section');
+
+if (searchInput) {
+  searchInput.addEventListener('input', (e) => {
+    const searchTerm = e.target.value.toLowerCase().trim();
+
+    if (!searchTerm) {
+      // Show all links
+      navLinks.forEach(link => link.classList.remove('search-hidden'));
+      sections.forEach(section => section.style.display = 'block');
+      return;
+    }
+
+    // Filter navigation links
+    navLinks.forEach(link => {
+      const text = link.textContent.toLowerCase();
+      if (text.includes(searchTerm)) {
+        link.classList.remove('search-hidden');
+      } else {
+        link.classList.add('search-hidden');
+      }
+    });
+
+    // Filter sections (optional - can be enabled for full-text search)
+    // Commenting out to keep it simple (nav-only search)
+    /*
+    sections.forEach(section => {
+      const text = section.textContent.toLowerCase();
+      section.style.display = text.includes(searchTerm) ? 'block' : 'none';
+    });
+    */
+  });
+}
+
+// ─── Smooth Scroll Enhancement ────────────────────────────────
+document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+  anchor.addEventListener('click', function (e) {
+    e.preventDefault();
+    const target = document.querySelector(this.getAttribute('href'));
+    if (target) {
+      target.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start'
+      });
+    }
+  });
+});
+</script>
 
 </body>
 </html>
