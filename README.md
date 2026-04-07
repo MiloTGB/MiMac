@@ -60,7 +60,7 @@ Before leaving your old machine, capture its current state using the `snapshot` 
 
 ```bash
 snapshot
-cd ~/Projects/MiMac-dev
+cd ~/MiMac
 git push
 ```
 

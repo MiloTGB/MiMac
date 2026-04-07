@@ -1,4 +1,4 @@
-MIMAC := $(HOME)/Projects/MiMac-dev
+MIMAC := $(HOME)/MiMac
 
 .PHONY: status sync snapshot-prefs pull-prefs picker manual help
 
@@ -10,7 +10,7 @@ help: ## Show available make commands
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' \
 		| sort
 	@echo ""
-	@echo "  \033[1mFrom ~/Projects/MiMac-dev/\033[0m"
+	@echo "  \033[1mFrom ~/MiMac/\033[0m"
 	@$(MAKE) -C $(MIMAC) help --no-print-directory 2>/dev/null
 	@echo ""
 

@@ -48,7 +48,7 @@ WARNING: --execute is DESTRUCTIVE and will:
   • Remove all MiMac dotfile symlinks
   • Remove all MiMac tool symlinks from ~/bin
   • Execute defaults and hardening rollback scripts
-  • Optionally delete MiMac and mimac-prefs repositories
+  • Optionally move MiMac and mimac-prefs repositories to Trash
   • Optionally uninstall Homebrew packages
 
 Always run without --execute first to preview changes!
@@ -189,7 +189,7 @@ repos_to_delete=()
 [[ -d "$HOME/mimac-prefs" ]] && repos_to_delete+=("$HOME/mimac-prefs")
 
 if (( ${#repos_to_delete[@]} > 0 )); then
-  operations_summary+="? Optional: Delete ${#repos_to_delete[@]} repository/repositories (will prompt)\n"
+  operations_summary+="? Optional: Move ${#repos_to_delete[@]} repository/repositories to Trash (will prompt)\n"
 fi
 
 # ─── 6. Homebrew cleanup (will prompt if --brew-cleanup) ────────────────────
@@ -269,7 +269,7 @@ if (( ${#repos_to_delete[@]} > 0 )); then
     printf '%s    • %s%s\n' "$_YLW" "$repo" "$_R"
   done
   echo ""
-  printf '%s  ▸%s Delete these repositories? [y/N]: ' "$_CYN" "$_R"
+  printf '%s  ▸%s Move these repositories to Trash? [y/N]: ' "$_CYN" "$_R"
   read -r ans
   if [[ "$ans" =~ ^[Yy]$ ]]; then
     do_repo_cleanup=true
@@ -375,14 +375,25 @@ fi
 
 # Repository cleanup
 if $do_repo_cleanup; then
-  log "Removing repositories..."
+  log "Moving repositories to Trash..."
   for repo in "${repos_to_delete[@]}"; do
     if [[ -d "$repo" ]]; then
-      log "Removing: $repo"
-      if rm -rf "$repo"; then
-        log "✓ Removed: $repo"
+      log "Trashing: $repo"
+      if command -v osascript >/dev/null 2>&1; then
+        osascript -e "tell application \"Finder\" to delete POSIX file \"$repo\"" >/dev/null 2>&1
       else
-        warn "Failed to remove: $repo"
+        # Fallback: manual move to Trash with collision handling
+        trash_name="$(basename "$repo")"
+        trash_dest="$HOME/.Trash/$trash_name"
+        if [[ -e "$trash_dest" ]]; then
+          trash_dest="$HOME/.Trash/${trash_name}-$(date +%Y%m%d-%H%M%S)"
+        fi
+        mv "$repo" "$trash_dest"
+      fi
+      if [[ ! -d "$repo" ]]; then
+        log "✓ Moved to Trash: $repo"
+      else
+        warn "Failed to trash: $repo"
       fi
     fi
   done

@@ -12,7 +12,7 @@ date: "[github.com/MiloTGB/MiMac](https://github.com/MiloTGB/MiMac)"
 
 | Repo | Location | Purpose |
 |---|---|---|
-| `MiloTGB/MiMac` | `~/Projects/MiMac-dev/` | Public bootstrap repo |
+| `MiloTGB/MiMac` | `~/MiMac/` | Public bootstrap repo |
 | `MiloTGB/mimac-prefs` | `~/.mimac/preferences/` | Private app preferences |
 
 The two-repo split keeps personal preference data (iTerm2 profiles, Audio Hijack settings, etc.) out of the public repo while still making them fully portable across machines.
@@ -181,13 +181,13 @@ The manual source lives in the repo at `docs/manual.md`. After editing it, regen
 
 ```bash
 # Edit the source
-$EDITOR ~/Projects/MiMac-dev/docs/manual.md
+$EDITOR ~/MiMac/docs/manual.md
 
 # Regenerate the site HTML (requires pandoc)
 make manual
 
 # Commit and push both files
-cd ~/Projects/MiMac-dev
+cd ~/MiMac
 git add docs/manual.md docs/index.html
 git commit -m "docs: update manual"
 git push
@@ -217,10 +217,10 @@ make snapshot-prefs
 
 Exports and pushes all app preference plists plus Application Support files. Verify the push succeeded — you should see "Pushed to git@github.com:MiloTGB/mimac-prefs.git" in the output.
 
-**3. Push any pending MiMac-dev changes**
+**3. Push any pending MiMac changes**
 
 ```bash
-cd ~/Projects/MiMac-dev
+cd ~/MiMac
 git status
 git push
 ```
@@ -258,15 +258,13 @@ Write down any apps, license keys, or configurations not yet automated:
 **If SSH is already set up:**
 
 ```bash
-mkdir -p ~/Projects
-git clone git@github.com:MiloTGB/MiMac.git ~/Projects/MiMac-dev
+git clone git@github.com:MiloTGB/MiMac.git ~/MiMac
 ```
 
 **If SSH is not yet configured** (fresh machine), clone over HTTPS first:
 
 ```bash
-mkdir -p ~/Projects
-git clone https://github.com/MiloTGB/MiMac.git ~/Projects/MiMac-dev
+git clone https://github.com/MiloTGB/MiMac.git ~/MiMac
 ```
 
 Then generate and add your SSH key to GitHub before continuing, so mimac-prefs can be pulled automatically in Phase 3.
@@ -274,7 +272,7 @@ Then generate and add your SSH key to GitHub before continuing, so mimac-prefs c
 ## Step 2 — Phase 1: Shell & Dotfiles
 
 ```bash
-cd ~/Projects/MiMac-dev
+cd ~/MiMac
 make setup
 exec zsh        # Reload shell to pick up dotfiles and ~/bin
 ```
@@ -340,7 +338,7 @@ Review the output and address any items marked with warnings or errors.
 ## Full One-Command Install
 
 ```bash
-cd ~/Projects/MiMac-dev
+cd ~/MiMac
 make all
 exec zsh
 make picker
@@ -352,7 +350,7 @@ make picker
 
 ## Commands Available from Anywhere (`~/Makefile`)
 
-`~/Makefile` is deployed automatically by `make setup` via `dotfiles/`. Running `make help` from `~/` shows all commands from both this file and `MiMac-dev/`.
+`~/Makefile` is deployed automatically by `make setup` via `dotfiles/`. Running `make help` from `~/` shows all commands from both this file and `MiMac/`.
 
 | Command | Description |
 |---|---|
@@ -362,9 +360,9 @@ make picker
 | `make snapshot-prefs` | Export app preferences and push to mimac-prefs |
 | `make pull-prefs` | Clone or pull app preferences from mimac-prefs |
 | `make picker` | Build the mimac-picker TUI binary |
-| `make help` | Show all available commands from `~/` and `MiMac-dev/` |
+| `make help` | Show all available commands from `~/` and `MiMac/` |
 
-## Commands from `~/Projects/MiMac-dev/`
+## Commands from `~/MiMac/`
 
 | Command | Description |
 |---|---|

@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-# Resolve repo paths (works from MiMac or MiMac-dev)
+# Resolve repo paths
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$BASE_DIR")"
 
