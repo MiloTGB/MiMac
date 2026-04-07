@@ -3,6 +3,18 @@ set -euo pipefail
 
 # MiMac brew — Phase 2: Homebrew packages and applications installation
 
+# This script requires bash 4+ (associative arrays). macOS ships with bash 3.2.
+# If running under an old bash, re-exec with Homebrew's bash.
+if (( BASH_VERSINFO[0] < 4 )); then
+  for _brew_bash in /opt/homebrew/bin/bash /usr/local/bin/bash; do
+    if [[ -x "$_brew_bash" ]]; then
+      exec "$_brew_bash" "$0" "$@"
+    fi
+  done
+  echo "Error: bash 4+ is required but not found. Install Homebrew first (make install)." >&2
+  exit 1
+fi
+
 SOURCE="${BASH_SOURCE[0]}"
 while [[ -L "$SOURCE" ]]; do
   DIR="$(cd "$(dirname "$SOURCE")" && pwd)"

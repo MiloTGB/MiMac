@@ -230,22 +230,20 @@ phase_link_tools() {
   # - Internal phase scripts (use Makefile targets instead)
   # - lib.sh (sourced helper, not a standalone command)
   # - Scripts that would shadow important system commands
-  local -A SKIP_LINK=(
-    [brew-packages]=1  # internal phase — use 'make brew'
-    [install]=1        # shadows /usr/bin/install
-    [setup]=1          # internal phase — use 'make setup'
-    [post-install]=1   # internal phase — use 'make post-install'
-    [defaults.sh]=1    # called by setup, not a user command
-    [hardening.sh]=1   # use 'make harden'
-    [lib.sh]=1         # sourced helper, not executable
-    [uninstall]=1      # use 'make uninstall'
-    [dev-test.sh]=1    # development testing script
-  )
-  
+  # Uses case statement for bash 3.2 compatibility (no associative arrays)
+  _skip_link() {
+    case "$1" in
+      brew-packages|install|setup|post-install) return 0 ;;  # internal phases
+      defaults.sh|hardening.sh|lib.sh) return 0 ;;           # helpers, not commands
+      uninstall|dev-test.sh) return 0 ;;                      # use make targets
+      *) return 1 ;;
+    esac
+  }
+
   if [[ ! -d "$SCRIPTS_DIR" ]]; then
     warn "Scripts directory not found: $SCRIPTS_DIR"
   fi
-  
+
   if [[ -d "$SCRIPTS_DIR" ]]; then
     # Count total first for progress and collect files
     local files=()
@@ -254,7 +252,7 @@ phase_link_tools() {
       local base_name
       base_name="$(basename "$f")"
       # Skip excluded scripts
-      if [[ -n "${SKIP_LINK[$base_name]+x}" ]]; then
+      if _skip_link "$base_name"; then
         continue
       fi
       files+=("$f")

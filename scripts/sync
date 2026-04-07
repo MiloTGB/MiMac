@@ -3,6 +3,17 @@ set -euo pipefail
 
 # MiMac sync — Snapshot installed Homebrew packages into the Brewfile
 
+# Requires bash 4+ (associative arrays). Re-exec with Homebrew's bash if needed.
+if (( BASH_VERSINFO[0] < 4 )); then
+  for _brew_bash in /opt/homebrew/bin/bash /usr/local/bin/bash; do
+    if [[ -x "$_brew_bash" ]]; then
+      exec "$_brew_bash" "$0" "$@"
+    fi
+  done
+  echo "Error: bash 4+ is required but not found." >&2
+  exit 1
+fi
+
 # Resolve symlinks to find the actual script directory
 SOURCE="${BASH_SOURCE[0]}"
 while [[ -L "$SOURCE" ]]; do
