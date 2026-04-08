@@ -33,7 +33,18 @@ if [[ ! -f "$ROLLBACK" ]]; then
   fi
 fi
 
-log(){ printf "[defaults] %s\n" "$*"; }
+# Resolve symlinks
+_self="${BASH_SOURCE[0]}"
+while [[ -L "$_self" ]]; do
+  _dir="$(cd "$(dirname "$_self")" && pwd)"
+  _self="$(readlink "$_self")"
+  [[ "$_self" != /* ]] && _self="$_dir/$_self"
+done
+SCRIPT_DIR="$(cd "$(dirname "$_self")" && pwd)"
+
+# shellcheck source=lib.sh
+source "$SCRIPT_DIR/lib.sh"
+
 backup_line(){ echo "$1" >> "$ROLLBACK"; }
 
 # Helper: capture current value (if any) and append the inverse to rollback
@@ -42,9 +53,11 @@ write_default(){
   local domain="$1" key="$2" type="$3" value="$4"
   local current
   if current=$(defaults read "$domain" "$key" 2>/dev/null); then
+    local escaped_current
+    escaped_current=$(printf '%q' "$current")
     case "$current" in
       true|false) backup_line "defaults write $domain $key -bool $current" ;;
-      ''|*[!0-9]*) backup_line "defaults write $domain $key -string \"$current\"" ;;
+      ''|*[!0-9]*) backup_line "defaults write $domain $key -string $escaped_current" ;;
       *) backup_line "defaults write $domain $key -int $current" ;;
     esac
   else

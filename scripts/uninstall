@@ -14,10 +14,11 @@ while [[ -L "$SOURCE" ]]; do
 done
 SCRIPT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-INSTALL_BIN="$HOME/bin"
 
-log(){ printf "[uninstall] %s\n" "$*"; }
-warn(){ printf "[warn] %s\n" "$*"; }
+# shellcheck source=lib.sh
+source "$SCRIPT_DIR/lib.sh"
+
+INSTALL_BIN="$HOME/bin"
 
 log "Unlinking MiMac symlinks from $INSTALL_BIN..."
 removed=0

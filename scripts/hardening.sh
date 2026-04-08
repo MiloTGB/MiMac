@@ -3,6 +3,18 @@ set -euo pipefail
 
 # MiMac hardening — opt-in security tweaks with rollback (inspired by Strap)
 
+# Resolve symlinks
+_self="${BASH_SOURCE[0]}"
+while [[ -L "$_self" ]]; do
+  _dir="$(cd "$(dirname "$_self")" && pwd)"
+  _self="$(readlink "$_self")"
+  [[ "$_self" != /* ]] && _self="$_dir/$_self"
+done
+SCRIPT_DIR="$(cd "$(dirname "$_self")" && pwd)"
+
+# shellcheck source=lib.sh
+source "$SCRIPT_DIR/lib.sh"
+
 ROLL_DIR="$HOME/.mimac"
 ROLL="$ROLL_DIR/hardening-rollback.sh"
 
@@ -12,23 +24,22 @@ if ! mkdir -p "$ROLL_DIR"; then
   exit 1
 fi
 
-if ! printf '#!/usr/bin/env bash\n' > "$ROLL" || ! chmod +x "$ROLL"; then
-  echo "Error: Failed to initialize rollback script: $ROLL" >&2
-  exit 1
+if [[ ! -f "$ROLL" ]]; then
+  if ! printf '#!/usr/bin/env bash\n' > "$ROLL" || ! chmod +x "$ROLL"; then
+    echo "Error: Failed to initialize rollback script: $ROLL" >&2
+    exit 1
+  fi
 fi
 
-log(){ printf "[hardening] %s\n" "$*"; }
-warn(){ printf "[hardening] warning: %s\n" "$*" >&2; }
 rollback(){ echo "$*" >> "$ROLL"; }
 
-have_sudo=false
+have_sudo=0
 if command -v sudo >/dev/null 2>&1; then
-  # Check if sudo is available (may require password)
-  have_sudo=true
+  have_sudo=1
 fi
 
 # 1) Touch ID for sudo (pam_tid)
-if $have_sudo; then
+if (( have_sudo )); then
   if ! grep -q 'pam_tid.so' /etc/pam.d/sudo 2>/dev/null; then
     log "Enabling Touch ID for sudo"
     if sudo cp /etc/pam.d/sudo /etc/pam.d/sudo.backup.mimac 2>/dev/null; then
@@ -63,7 +74,7 @@ defaults write com.apple.screensaver askForPassword -int 1
 defaults write com.apple.screensaver askForPasswordDelay -int 0
 
 # 3) Enable firewall (global + stealth)
-if $have_sudo; then
+if (( have_sudo )); then
   log "Enabling macOS firewall (global on, stealth on)"
   prev=$(/usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate 2>/dev/null | awk '{print $3}' || echo "off")
   rollback "/usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate ${prev:-off}"

@@ -2,6 +2,9 @@
 # lib.sh — shared helpers for MiMac scripts
 # Source this file; do not execute directly.
 
+[[ -n "${_LIB_SH_LOADED:-}" ]] && return 0
+_LIB_SH_LOADED=1
+
 # Resolve the real path of a file, following symlinks.
 # Works on macOS (which may lack readlink -f on older versions).
 resolve_path() {
@@ -39,6 +42,8 @@ log()     { printf '%s  ▸%s %s\n' "$_CYN" "$_R" "$*" >&2; }
 ok()      { printf '%s  ✓%s %s\n' "$_GRN" "$_R" "$*" >&2; }
 warn()    { printf '%s  ⚠%s %s\n' "$_YLW" "$_R" "$*" >&2; }
 err()     { printf '%s  ✗%s %s\n' "$_RED" "$_R" "$*" >&2; }
+info()    { printf '    %s\n' "$*" >&2; }
+section() { printf '\n%s%s══ %s%s\n\n' "$_B" "$_BLU" "$*" "$_R" >&2; }
 dry()     { if (( DRY_RUN )); then printf '%s  ◦%s %s\n' "$_BLU" "$_R" "$*" >&2; else log "$@"; fi; }
 logskip() { printf '%s  ·%s %s (%s)\n' "$_YLW" "$_R" "$1" "$2" >&2; }
 

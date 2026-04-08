@@ -625,15 +625,6 @@ if (( PRUNE )); then
     exit 1
   fi
 
-  python3 - "$BREWFILE" <<'PYEOF'
-import sys, re
-
-brewfile_path = sys.argv[1]
-
-# Read packages to remove from environment (passed via stdin)
-packages_to_remove = []
-PYEOF
-
   # Build list of packages to remove
   all_prune_pkgs=()
   for pkg in "${!prune_formulae[@]}"; do all_prune_pkgs+=("$pkg"); done

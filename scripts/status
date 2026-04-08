@@ -21,16 +21,14 @@ while [[ -L "$SOURCE" ]]; do
   [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
 done
 SCRIPT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+
+# shellcheck source=lib.sh
+source "$SCRIPT_DIR/lib.sh"
+
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 INSTALL_BIN="$HOME/bin"
 STATE_DIR="$HOME/.mimac"
 BREWFILE="$REPO_ROOT/Brewfile"
-
-# Color-coded output functions
-ok()    { printf $'\033[32m✓ %s\033[0m\n' "$*"; }
-warn()  { printf $'\033[33m⚠ %s\033[0m\n' "$*"; }
-err()   { printf $'\033[31m✗ %s\033[0m\n' "$*"; }
-info()  { printf '  %s\n' "$*"; }
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

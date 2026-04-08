@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Resolve symlinks
+_self="${BASH_SOURCE[0]}"
+while [[ -L "$_self" ]]; do
+  _dir="$(cd "$(dirname "$_self")" && pwd)"
+  _self="$(readlink "$_self")"
+  [[ "$_self" != /* ]] && _self="$_dir/$_self"
+done
+SCRIPT_DIR="$(cd "$(dirname "$_self")" && pwd)"
+
+# shellcheck source=lib.sh
+source "$SCRIPT_DIR/lib.sh"
+
 # Config (env-overridable)
 : "${SYNCALL_ROOT:="$HOME"}"
 : "${SYNCALL_MAX_DEPTH:=7}"   # search depth under $HOME (if supported by find)
@@ -10,16 +22,33 @@ set -euo pipefail
 : "${SYNCALL_DEFAULT_REMOTE:=origin}" # fallback remote if no upstream is set
 : "${SYNCALL_SKIP_PATHS:="$HOME/MiMac"}" # colon-separated folders to skip entirely
 
-# Colors
-if command -v tput >/dev/null 2>&1 && [[ -t 1 ]]; then
-  bold=$(tput bold); green=$(tput setaf 2); cyan=$(tput setaf 6); yellow=$(tput setaf 3); red=$(tput setaf 1); reset=$(tput sgr0)
-else
-  bold=""; green=""; cyan=""; yellow=""; red=""; reset=""
-fi
-log()  { printf "%s%s%s\n" "$cyan" "$*" "$reset"; }
-good() { printf "%s%s%s\n" "$green" "$*" "$reset"; }
-warn() { printf "%s%s%s\n" "$yellow" "$*" "$reset"; }
-err()  { printf "%s%s%s\n" "$red" "$*" "$reset" >&2; }
+# Parse arguments
+while (( "$#" )); do
+  case "$1" in
+    --dry-run|-n) SYNCALL_DRY_RUN=1 ;;
+    -h|--help)
+      cat <<'USAGE'
+syncall — Auto-commit and push all GitHub repos under $HOME
+
+Usage: syncall [options]
+  --dry-run, -n   Preview what would be committed/pushed
+  -h, --help      Show this help
+
+Environment variables:
+  SYNCALL_ROOT           Root directory to search (default: $HOME)
+  SYNCALL_MAX_DEPTH      Search depth (default: 7)
+  SYNCALL_ONLY_GITHUB    Only sync GitHub repos (default: 1)
+  SYNCALL_DRY_RUN        Dry-run mode (default: 0)
+  SYNCALL_EXCLUDES       Colon-separated paths to exclude
+  SYNCALL_DEFAULT_REMOTE Default remote name (default: origin)
+  SYNCALL_SKIP_PATHS     Colon-separated paths to skip entirely
+USAGE
+      exit 0
+      ;;
+    *) err "Unknown option: $1"; exit 1 ;;
+  esac
+  shift
+done
 
 # --- helpers ---------------------------------------------------------------
 
@@ -61,7 +90,7 @@ push_repo() {
   if [[ "${SYNCALL_DRY_RUN}" == "1" ]]; then
     log "DRY-RUN: would push $dir ($remote → $branch)"
   else
-    git -C "$dir" push "$remote" "HEAD:$branch" && good "pushed: $dir"
+    git -C "$dir" push "$remote" "HEAD:$branch" && ok "pushed: $dir"
   fi
 }
 
@@ -115,7 +144,7 @@ discover_repos() {
 # --- main ------------------------------------------------------------------
 
 main() {
-  log "${bold}Syncing repos under ${SYNCALL_ROOT}${reset}"
+  log "${_B}Syncing repos under ${SYNCALL_ROOT}${_R}"
   repos=()
   while IFS= read -r r; do repos+=("$r"); done < <(discover_repos)
 
@@ -134,10 +163,19 @@ main() {
       continue
     fi
 
-    # Always auto-commit local changes before pushing
+    # Auto-commit local changes before pushing (with confirmation)
     if is_dirty "$r"; then
       warn "auto-commit: $r has local changes"
-      auto_commit "$r"
+      if (( SYNCALL_DRY_RUN )); then
+        log "DRY-RUN: would auto-commit $r"
+      else
+        if [[ -t 0 ]]; then
+          printf '%s  ▸%s Auto-commit and push %s? [y/N]: ' "$_CYN" "$_R" "$r"
+          read -r ans
+          [[ ! "$ans" =~ ^[Yy]$ ]] && { warn "Skipped: $r"; continue; }
+        fi
+        auto_commit "$r"
+      fi
     fi
 
     # Push even if there were no changes (fast-forward noop is fine)
@@ -149,11 +187,11 @@ main() {
   done
 
   echo
-  good "––––––––––––––"
-  log "${bold}Sync complete${reset}"
+  ok "––––––––––––––"
+  log "${_B}Sync complete${_R}"
   mkdir -p "${HOME}/.cache/mimac"
   echo "syncall ran on $(date)" >>"${HOME}/.cache/mimac/syncall.log"
-  good "––––––––––––––"
+  ok "––––––––––––––"
 }
 
 main "$@"
