@@ -159,7 +159,7 @@ picker_bin=$(find_picker)
 
 if [[ -n "$picker_bin" ]]; then
   # Build a minimal temp Brewfile for mimac-picker
-  TEMP_BREWFILE=$(mktemp /tmp/mimac-sync.XXXXXX)
+  TEMP_BREWFILE=$(mktemp "${TMPDIR:-/tmp}/mimac-sync.XXXXXX")
 
   if (( ${#new_formulae_arr[@]} > 0 )); then
     printf '# New Formulae\n' >> "$TEMP_BREWFILE"
@@ -368,7 +368,7 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 1
 fi
 
-TEMP_INSERTIONS=$(mktemp /tmp/mimac-sync-ins.XXXXXX)
+TEMP_INSERTIONS=$(mktemp "${TMPDIR:-/tmp}/mimac-sync-ins.XXXXXX")
 printf '%s' "$insertions_data" > "$TEMP_INSERTIONS"
 
 python3 - "$BREWFILE" "$TEMP_INSERTIONS" <<'PYEOF'

@@ -397,7 +397,7 @@ install_brewfile() {
   fi
 
   # Parse Brewfile and collect items
-  TEMP_BREWFILE=$(mktemp /tmp/mimac-brewfile.XXXXXX)
+  TEMP_BREWFILE=$(mktemp "${TMPDIR:-/tmp}/mimac-brewfile.XXXXXX")
 
   local formulae_count=0
   local casks_count=0

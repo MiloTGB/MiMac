@@ -425,7 +425,7 @@ phase_dotfiles() {
         ((backed_up++)) || true
       else
         log "Backing up: $dst -> $BACKUP_DIR/$(basename "$dst")"
-        if ! mv "$dst" "$BACKUP_DIR/"; then
+        if ! mv "$dst" "$BACKUP_DIR/" || [[ ! -e "$BACKUP_DIR/$(basename "$dst")" ]]; then
           err "Failed to backup $dst - aborting dotfile linking"
           shopt -u dotglob nullglob
           printf "\r" >&2 || true
@@ -473,9 +473,9 @@ phase_dotfiles() {
 # Validate git URL format (basic check)
 is_valid_git_url() {
   local url="$1"
-  # Allow http://, https://, git@, or file:// URLs
-  if [[ "$url" =~ ^(https?://|git@|file://|ssh://).+\.git$ ]] || \
-     [[ "$url" =~ ^(https?://|git@|file://|ssh://)[^[:space:]]+$ ]]; then
+  # Allow http(s)://, ssh://, file:// URLs ending in .git, or git@host:path.git
+  if [[ "$url" =~ ^(https?://|file://|ssh://)[^[:space:]]+\.git$ ]] || \
+     [[ "$url" =~ ^git@[^[:space:]:]+:[^[:space:]]+\.git$ ]]; then
     return 0
   fi
   return 1

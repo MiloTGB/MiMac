@@ -38,7 +38,10 @@ apply_defaults(){
 install_browser_policy(){
   local src="$1" dest_dir="$2" name="$3"
   local dest="$dest_dir/mimac-policy.json"
-  mkdir -p "$dest_dir"
+  if ! mkdir -p "$dest_dir"; then
+    warn "Failed to create policy directory: $dest_dir"
+    return 1
+  fi
   if [[ -f "$dest" ]] && cmp -s "$src" "$dest"; then
     log "$name policy already installed"
     return 0
@@ -70,7 +73,7 @@ TOPGRADE_SRC="$REPO_ROOT/assets/topgrade.toml"
 TOPGRADE_DST="$HOME/.config/topgrade.toml"
 
 if command -v topgrade >/dev/null 2>&1 && [[ -f "$TOPGRADE_SRC" ]]; then
-  mkdir -p "$HOME/.config"
+  mkdir -p "$HOME/.config" || { warn "Failed to create $HOME/.config"; }
   if [[ -L "$TOPGRADE_DST" ]] && [[ "$(readlink "$TOPGRADE_DST")" == "$TOPGRADE_SRC" ]]; then
     log "Topgrade config already linked"
   else
@@ -90,7 +93,7 @@ GH_SRC="$REPO_ROOT/assets/gh/config.yml"
 GH_DST="$HOME/.config/gh/config.yml"
 
 if command -v gh >/dev/null 2>&1 && [[ -f "$GH_SRC" ]]; then
-  mkdir -p "$HOME/.config/gh"
+  mkdir -p "$HOME/.config/gh" || { warn "Failed to create $HOME/.config/gh"; }
   if [[ -L "$GH_DST" ]] && [[ "$(readlink "$GH_DST")" == "$GH_SRC" ]]; then
     log "GitHub CLI config already linked"
   else
@@ -110,7 +113,7 @@ HTOP_SRC="$REPO_ROOT/assets/htop/htoprc"
 HTOP_DST="$HOME/.config/htop/htoprc"
 
 if command -v htop >/dev/null 2>&1 && [[ -f "$HTOP_SRC" ]]; then
-  mkdir -p "$HOME/.config/htop"
+  mkdir -p "$HOME/.config/htop" || { warn "Failed to create $HOME/.config/htop"; }
   if [[ -L "$HTOP_DST" ]] && [[ "$(readlink "$HTOP_DST")" == "$HTOP_SRC" ]]; then
     log "htop config already linked"
   else
@@ -320,7 +323,10 @@ restore_app_support(){
     return 0
   fi
 
-  mkdir -p "$dest_dir"
+  if ! mkdir -p "$dest_dir"; then
+    warn "Failed to create app support directory: $dest_dir"
+    return 1
+  fi
   local restored=0
   for file in "${files[@]}"; do
     if [[ -f "$src_dir/$file" ]] && [[ ! -f "$dest_dir/$file" ]]; then
@@ -358,13 +364,16 @@ add_login_item(){
 
   # Check/add login items via System Events (requires Automation permission)
   local osascript_err
-  osascript_err=$(osascript -e "tell application \"System Events\" to get the name of every login item" 2>&1) && {
-    if echo "$osascript_err" | grep -q "$app_name"; then
+  osascript_err=$(osascript <<'SCPT' 2>&1
+tell application "System Events" to get the name of every login item
+SCPT
+  ) && {
+    if echo "$osascript_err" | grep -qF "$app_name"; then
       log "Login item already exists: $app_name"
       return 0
     fi
   } || {
-    if echo "$osascript_err" | grep -q "Not authorized"; then
+    if echo "$osascript_err" | grep -qF "Not authorized"; then
       log "Cannot manage login items (Automation permission not granted)"
       log "  → Add $app_name manually: System Settings → General → Login Items"
       return 0
@@ -372,11 +381,14 @@ add_login_item(){
     return 1
   }
 
-  osascript -e "tell application \"System Events\" to make login item at end with properties {path:\"$app_path\", hidden:false}" >/dev/null 2>&1 || {
+  if ! osascript <<EOF >/dev/null 2>&1
+tell application "System Events" to make login item at end with properties {path:"$app_path", hidden:false}
+EOF
+  then
     log "Failed to add login item: $app_name"
     log "  → Add manually: System Settings → General → Login Items"
     return 1
-  }
+  fi
   log "Added login item: $app_name"
 }
 

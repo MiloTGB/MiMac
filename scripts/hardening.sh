@@ -46,7 +46,12 @@ if (( have_sudo )); then
       rollback "sudo mv /etc/pam.d/sudo.backup.mimac /etc/pam.d/sudo"
       tmpfile="$(mktemp)"
       { echo 'auth       sufficient     pam_tid.so'; cat /etc/pam.d/sudo; } > "$tmpfile"
-      if sudo cp "$tmpfile" /etc/pam.d/sudo 2>/dev/null; then
+      # Verify temp file is valid before overwriting system config
+      if [[ ! -s "$tmpfile" ]] || ! grep -q 'pam_tid.so' "$tmpfile" || ! grep -q 'pam_smartcard.so\|pam_opendirectory.so' "$tmpfile"; then
+        warn "Generated PAM config appears invalid — aborting Touch ID setup"
+        rm -f "$tmpfile"
+        sudo mv /etc/pam.d/sudo.backup.mimac /etc/pam.d/sudo 2>/dev/null || true
+      elif sudo cp "$tmpfile" /etc/pam.d/sudo 2>/dev/null; then
         log "Touch ID for sudo enabled"
       else
         warn "Failed to write new sudo PAM config (may require password)"
