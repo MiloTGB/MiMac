@@ -3,14 +3,25 @@ REPO_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 SCRIPTS := scripts
 BIN_DIR   := $(REPO_ROOT)/bin
 
-.PHONY: all install fix-exec setup brew post-install tools dotfiles defaults trackpad uninstall nuke update updates harden status doctor dock sync sync-commit sync-prune sync-clean setup-dry nuke-execute picker manual help snapshot-prefs pull-prefs
+.PHONY: all install fix-exec setup brew post-install tools dotfiles defaults trackpad uninstall nuke update updates harden status doctor dock sync sync-commit sync-prune sync-clean setup-dry nuke-execute picker bf mimac-status build-tools manual help snapshot-prefs pull-prefs
+
+# Build a Go tool: $(call go-build,<binary>,<tool-dir>)
+define go-build
+	@if ! command -v go >/dev/null 2>&1; then \
+		echo "error: Go is not installed. Install it with: brew install go"; \
+		exit 1; \
+	fi
+	@printf '  \033[36m▸\033[0m Building $(1)…\n'
+	@cd "$(REPO_ROOT)/tools/$(2)" && go mod tidy && go build -o "$(BIN_DIR)/$(1)" .
+	@chmod +x "$(BIN_DIR)/$(1)"
+endef
 
 help: ## Show available make commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' \
 		| sort
 
-all: setup brew post-install ## Full install: setup + brew + post-install
+all: setup brew post-install build-tools ## Full install: setup + brew + post-install + TUI binaries
 
 fix-exec: ## Make scripts and bin files executable
 	@echo "Making scripts and bin executables..."
@@ -89,15 +100,18 @@ snapshot-prefs: ## Export app preferences and push to mimac-prefs
 pull-prefs: ## Clone or pull app preferences from mimac-prefs
 	@"$(SCRIPTS)/pull-prefs"
 
+build-tools: ## Build all Go TUI binaries (requires Go)
+	@printf '\n\033[1;34m══ Building TUI Tools\033[0m\n\n'
+	@$(MAKE) --no-print-directory picker bf mimac-status
+
 picker: ## Build the mimac-picker TUI binary
-	@if ! command -v go >/dev/null 2>&1; then \
-		echo "error: Go is not installed. Install it with: brew install go"; \
-		exit 1; \
-	fi
-	@echo "Building mimac-picker…"
-	@cd "$(REPO_ROOT)/tools/picker" && go mod tidy -e && go build -o "$(BIN_DIR)/mimac-picker" .
-	@echo "Built: $(BIN_DIR)/mimac-picker"
-	@chmod +x "$(BIN_DIR)/mimac-picker"
+	$(call go-build,mimac-picker,picker)
+
+bf: ## Build the bf Brewfile manager TUI binary
+	$(call go-build,bf,bf)
+
+mimac-status: ## Build the mimac-status health dashboard TUI binary
+	$(call go-build,mimac-status,mimac-status)
 
 manual: ## Regenerate docs/index.html from docs/manual.md (requires pandoc)
 	@if ! command -v pandoc >/dev/null 2>&1; then \

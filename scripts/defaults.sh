@@ -55,11 +55,15 @@ write_default(){
   if current=$(defaults read "$domain" "$key" 2>/dev/null); then
     local escaped_current
     escaped_current=$(printf '%q' "$current")
-    case "$current" in
-      true|false) backup_line "defaults write $domain $key -bool $current" ;;
-      ''|*[!0-9]*) backup_line "defaults write $domain $key -string $escaped_current" ;;
-      *) backup_line "defaults write $domain $key -int $current" ;;
-    esac
+    if [[ "$current" =~ ^(true|false)$ ]]; then
+      backup_line "defaults write $domain $key -bool $current"
+    elif [[ "$current" =~ ^[0-9]+\.[0-9]+$ ]]; then
+      backup_line "defaults write $domain $key -float $current"
+    elif [[ "$current" =~ ^[0-9]+$ ]]; then
+      backup_line "defaults write $domain $key -int $current"
+    else
+      backup_line "defaults write $domain $key -string $escaped_current"
+    fi
   else
     backup_line "defaults delete $domain $key >/dev/null 2>&1 || true"
   fi

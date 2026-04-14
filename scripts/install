@@ -25,6 +25,15 @@ source "$SCRIPT_DIR/lib.sh"
 
 check_macos
 
+# Prevent concurrent runs
+LOCKFILE="$STATE_DIR/.mimac.lock"
+mkdir -p "$STATE_DIR"
+exec 200>"$LOCKFILE"
+if ! flock -n 200; then
+  err "Another MiMac instance is already running (lock: $LOCKFILE)"
+  exit 1
+fi
+
 # Parse top-level flag
 PHASE=""
 PASSTHROUGH=()

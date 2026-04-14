@@ -28,13 +28,14 @@ LOG_MAX_SIZE=10485760  # 10MB
 if [[ -t 2 ]]; then
   _R=$'\033[0m'        # Reset
   _B=$'\033[1m'        # Bold
+  _D=$'\033[2m'        # Dim
   _CYN=$'\033[36m'     # Cyan
   _GRN=$'\033[32m'     # Green
   _YLW=$'\033[33m'     # Yellow
   _RED=$'\033[31m'     # Red
   _BLU=$'\033[34m'     # Blue
 else
-  _R='' _B='' _CYN='' _GRN='' _YLW='' _RED='' _BLU=''
+  _R='' _B='' _D='' _CYN='' _GRN='' _YLW='' _RED='' _BLU=''
 fi
 
 # Logging helpers
