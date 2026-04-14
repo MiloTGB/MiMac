@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # nuke-mimac — Comprehensive MiMac removal tool
-# WARNING: This is a DESTRUCTIVE operation that removes all MiMac traces
+# All removals go to Trash (recoverable). Nothing is permanently deleted.
 #
 # Usage:
 #   scripts/nuke-mimac              # dry-run (safe preview)
@@ -44,13 +44,15 @@ Usage: scripts/nuke-mimac [options]
   --brew-cleanup    Also uninstall Homebrew packages from Brewfile
   -v, --verbose     Show detailed output
 
-WARNING: --execute is DESTRUCTIVE and will:
-  • Remove all MiMac dotfile symlinks
-  • Remove all MiMac tool symlinks from ~/bin
+WARNING: --execute will:
+  • Move all MiMac dotfile symlinks to Trash
+  • Move all MiMac tool symlinks from ~/bin to Trash
   • Execute defaults and hardening rollback scripts
+  • Move ~/.mimac state directory to Trash
   • Optionally move MiMac and mimac-prefs repositories to Trash
   • Optionally uninstall Homebrew packages
 
+Everything is moved to Trash (recoverable) — nothing is permanently deleted.
 Always run without --execute first to preview changes!
 USAGE
       exit 0
@@ -62,6 +64,41 @@ done
 
 # Verbose logging helper
 verbose() { (( VERBOSE )) && log "$*" || true; }
+
+# Move a file or directory to Trash instead of deleting it.
+# Tries: trash CLI → osascript Finder → manual mv to ~/.Trash
+to_trash() {
+  local target="$1"
+  [[ -e "$target" || -L "$target" ]] || return 0
+
+  # 1. trash CLI (Homebrew)
+  if command -v trash >/dev/null 2>&1; then
+    trash "$target" 2>/dev/null && return 0
+  fi
+
+  # 2. osascript (Finder)
+  if command -v osascript >/dev/null 2>&1; then
+    # Resolve symlinks for Finder (it needs the real path for POSIX file)
+    if [[ -L "$target" ]]; then
+      # Symlinks: Finder can't trash them via POSIX file, fall through
+      :
+    elif osascript -e "tell application \"Finder\" to delete POSIX file \"$target\"" >/dev/null 2>&1; then
+      return 0
+    fi
+  fi
+
+  # 3. Manual move to ~/.Trash
+  local name
+  name="$(basename "$target")"
+  local dest="$HOME/.Trash/$name"
+  if [[ -e "$dest" || -L "$dest" ]]; then
+    dest="$HOME/.Trash/${name}-$(date +%Y%m%d-%H%M%S)"
+  fi
+  mv "$target" "$dest" 2>/dev/null && return 0
+
+  # 4. Last resort for dangling symlinks
+  rm -f "$target" 2>/dev/null
+}
 
 if (( DRY_RUN )); then
   echo ""
@@ -296,7 +333,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 printf '%s%s  ⚠  FINAL CONFIRMATION  ⚠%s\n' "$_B" "$_RED" "$_R"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-warn "This is a DESTRUCTIVE operation!"
+warn "Everything will be moved to Trash (recoverable)."
 if (( backup_created )); then
   ok "Backup created at: $backup_dir"
 fi
@@ -320,28 +357,28 @@ echo ""
 
 # Remove dotfiles
 if (( do_basic_cleanup )) && (( ${#dotfiles_to_remove[@]} > 0 )); then
-  log "Removing dotfile symlinks..."
+  log "Trashing dotfile symlinks..."
   for link in "${dotfiles_to_remove[@]}"; do
-    if rm -f "$link"; then
-      verbose "Removed: $link"
+    if to_trash "$link"; then
+      verbose "Trashed: $link"
     else
-      warn "Failed to remove: $link"
+      warn "Failed to trash: $link"
     fi
   done
-  log "Removed ${#dotfiles_to_remove[@]} dotfile(s)"
+  log "Trashed ${#dotfiles_to_remove[@]} dotfile(s)"
 fi
 
 # Remove tool symlinks
 if (( do_basic_cleanup )) && (( ${#tools_to_remove[@]} > 0 )); then
-  log "Removing tool symlinks from ~/bin..."
+  log "Trashing tool symlinks from ~/bin..."
   for link in "${tools_to_remove[@]}"; do
-    if rm -f "$link"; then
-      verbose "Removed: $link"
+    if to_trash "$link"; then
+      verbose "Trashed: $link"
     else
-      warn "Failed to remove: $link"
+      warn "Failed to trash: $link"
     fi
   done
-  log "Removed ${#tools_to_remove[@]} tool(s)"
+  log "Trashed ${#tools_to_remove[@]} tool(s)"
 
   # Remove ~/bin if empty and was created by MiMac
   if [[ -d "$bin_dir" ]] && [[ -z "$(ls -A "$bin_dir" 2>/dev/null)" ]]; then
@@ -365,11 +402,11 @@ fi
 
 # Remove .mimac state directory
 if (( do_basic_cleanup )) && [[ -d "$HOME/.mimac" ]]; then
-  log "Removing ~/.mimac state directory..."
-  if rm -rf "$HOME/.mimac"; then
-    log "Removed ~/.mimac"
+  log "Trashing ~/.mimac state directory..."
+  if to_trash "$HOME/.mimac"; then
+    log "Trashed ~/.mimac"
   else
-    warn "Failed to remove ~/.mimac"
+    warn "Failed to trash ~/.mimac"
   fi
 fi
 
@@ -379,21 +416,8 @@ if (( do_repo_cleanup )); then
   for repo in "${repos_to_delete[@]}"; do
     if [[ -d "$repo" ]]; then
       log "Trashing: $repo"
-      if command -v osascript >/dev/null 2>&1; then
-        osascript <<EOF >/dev/null 2>&1
-tell application "Finder" to delete POSIX file "$repo"
-EOF
-      else
-        # Fallback: manual move to Trash with collision handling
-        trash_name="$(basename "$repo")"
-        trash_dest="$HOME/.Trash/$trash_name"
-        if [[ -e "$trash_dest" ]]; then
-          trash_dest="$HOME/.Trash/${trash_name}-$(date +%Y%m%d-%H%M%S)"
-        fi
-        mv "$repo" "$trash_dest"
-      fi
-      if [[ ! -d "$repo" ]]; then
-        log "✓ Moved to Trash: $repo"
+      if to_trash "$repo" && [[ ! -d "$repo" ]]; then
+        log "Moved to Trash: $repo"
       else
         warn "Failed to trash: $repo"
       fi
