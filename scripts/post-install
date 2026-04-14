@@ -221,9 +221,13 @@ fi
 PREFS_REPO="git@github.com:MiloTGB/mimac-prefs.git"
 LOCAL_PREFS_DIR="$HOME/.mimac/preferences"
 
+_ssh_ok=0
+if ssh -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
+  _ssh_ok=1
+fi
+
 if [[ ! -d "$LOCAL_PREFS_DIR/.git" ]]; then
-  # Check if SSH is authenticated to GitHub
-  if ssh -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
+  if (( _ssh_ok )); then
     log "Cloning mimac-prefs..."
     mkdir -p "$(dirname "$LOCAL_PREFS_DIR")"
     git clone "$PREFS_REPO" "$LOCAL_PREFS_DIR" 2>/dev/null || {
@@ -235,6 +239,16 @@ if [[ ! -d "$LOCAL_PREFS_DIR/.git" ]]; then
   fi
 else
   log "Preferences repo already present at $LOCAL_PREFS_DIR"
+fi
+
+# Switch MiMac repo remote from HTTPS to SSH if possible
+if (( _ssh_ok )); then
+  _current_url=$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null || true)
+  if [[ "$_current_url" == https://* ]]; then
+    _ssh_url="${_current_url/https:\/\/github.com\//git@github.com:}"
+    git -C "$REPO_ROOT" remote set-url origin "$_ssh_url"
+    log "Switched MiMac remote to SSH: $_ssh_url"
+  fi
 fi
 
 ###############################################################################

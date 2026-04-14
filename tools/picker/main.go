@@ -13,6 +13,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	theme "mimac-theme"
 )
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -79,7 +80,12 @@ var descriptions = map[string]string{
 	"shellcheck":        "Static analysis and linting tool for shell scripts",
 	"shfmt":             "Shell script formatter",
 	"ffmpeg":            "Complete solution for audio/video recording and conversion",
+	"go":                "Go programming language — required for building MiMac TUI tools",
 	"sox":               "Sound eXchange — Swiss army knife for audio manipulation",
+	"trash":             "Move files to macOS Trash instead of permanent deletion",
+	"tree":              "Display directory structure as a tree diagram",
+	"watch":             "Execute a command periodically and display the output",
+	"wget":              "Network file downloader with retry and resume support",
 	// Casks
 	"4k-video-downloader+": "Download videos from YouTube and other platforms",
 	"appcleaner":           "Completely uninstall apps and all their leftover files",
@@ -350,31 +356,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // ── Styles ────────────────────────────────────────────────────────────────
 
 var (
-	colSubtle    = lipgloss.AdaptiveColor{Light: "#888888", Dark: "#555555"}
-	colDim       = lipgloss.AdaptiveColor{Light: "#aaaaaa", Dark: "#444444"}
-	colNormal    = lipgloss.AdaptiveColor{Light: "#222222", Dark: "#cccccc"}
-	colHighlight = lipgloss.AdaptiveColor{Light: "#d7005f", Dark: "#ff87af"}
-	colAccent    = lipgloss.AdaptiveColor{Light: "#005fd7", Dark: "#87d7ff"}
-	colGreen     = lipgloss.AdaptiveColor{Light: "#00875f", Dark: "#5fd7a7"}
-
-	stylePaneOff = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colSubtle)
-
-	stylePaneOn = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colAccent)
-
-	styleTitle     = lipgloss.NewStyle().Bold(true).Foreground(colNormal)
-	styleCount     = lipgloss.NewStyle().Bold(true).Foreground(colAccent)
-	styleFooter    = lipgloss.NewStyle().Foreground(colSubtle)
-	styleCatActive = lipgloss.NewStyle().Bold(true).Foreground(colHighlight)
-	styleCatNorm   = lipgloss.NewStyle().Foreground(colNormal)
-	styleBadgeDim  = lipgloss.NewStyle().Foreground(colSubtle)
-	styleInstalled = lipgloss.NewStyle().Foreground(colDim)
-	stylePkgSel    = lipgloss.NewStyle().Foreground(colGreen)
-	stylePkgCurs   = lipgloss.NewStyle().Bold(true).Foreground(colHighlight)
-	styleDescDim   = lipgloss.NewStyle().Foreground(colSubtle)
+	styleCount     = lipgloss.NewStyle().Bold(true).Foreground(theme.ColAccent)
+	styleCatActive = lipgloss.NewStyle().Bold(true).Foreground(theme.ColHighlight)
+	styleCatNorm   = lipgloss.NewStyle().Foreground(theme.ColNormal)
+	styleBadgeDim  = lipgloss.NewStyle().Foreground(theme.ColSubtle)
+	styleInstalled = lipgloss.NewStyle().Foreground(theme.ColDim)
+	stylePkgSel    = lipgloss.NewStyle().Foreground(theme.ColGreen)
+	stylePkgCurs   = lipgloss.NewStyle().Bold(true).Foreground(theme.ColHighlight)
+	styleDescDim   = lipgloss.NewStyle().Foreground(theme.ColSubtle)
 )
 
 // ── View ──────────────────────────────────────────────────────────────────
@@ -404,7 +393,7 @@ func (m model) View() string {
 }
 
 func (m model) viewHeader() string {
-	title := styleTitle.Render("MiMac brew")
+	title := theme.StyleTitle.Render("MiMac brew")
 	sel := styleCount.Render(fmt.Sprintf("%d selected", m.totalSelected()))
 	gap := m.width - lipgloss.Width(title) - lipgloss.Width(sel)
 	if gap < 1 {
@@ -414,7 +403,7 @@ func (m model) viewHeader() string {
 }
 
 func (m model) viewFooter() string {
-	return styleFooter.Render("↑↓/jk move · tab/hl switch pane · space toggle · a all · enter confirm · q quit")
+	return theme.StyleFooter.Render("↑↓/jk move · tab/hl switch pane · space toggle · a all · enter confirm · q quit")
 }
 
 func (m model) viewLeft(inner, height int) string {
@@ -477,18 +466,18 @@ func (m model) viewLeft(inner, height int) string {
 	}
 
 	content := strings.TrimRight(sb.String(), "\n")
-	pane := stylePaneOff
+	pane := theme.StylePaneOff
 	if m.leftFocus {
-		pane = stylePaneOn
+		pane = theme.StylePaneOn
 	}
 	return pane.Width(inner).Height(height).Render(content)
 }
 
 func (m model) viewRight(inner, height int) string {
 	pkgs := m.currentPkgs()
-	pane := stylePaneOff
+	pane := theme.StylePaneOff
 	if !m.leftFocus {
-		pane = stylePaneOn
+		pane = theme.StylePaneOn
 	}
 
 	if len(pkgs) == 0 {

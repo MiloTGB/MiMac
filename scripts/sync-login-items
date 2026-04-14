@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# sync-login-items — compare system login items with what post-install manages
+#
+# Shows which login items are on the system but not in post-install,
+# and which are in post-install but not on the system.
+
+SOURCE="${BASH_SOURCE[0]}"
+while [[ -L "$SOURCE" ]]; do
+  DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+SCRIPT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+
+# shellcheck source=lib.sh
+source "$SCRIPT_DIR/lib.sh"
+
+check_macos
+
+POST_INSTALL="$SCRIPT_DIR/post-install"
+
+if [[ ! -f "$POST_INSTALL" ]]; then
+  err "post-install script not found: $POST_INSTALL"
+  exit 1
+fi
+
+section "Login Items Sync"
+
+# Get system login items via osascript
+log "Fetching system login items..."
+system_items=()
+while IFS= read -r item; do
+  item="${item## }"   # trim leading space
+  item="${item%% }"   # trim trailing space
+  [[ -n "$item" ]] && system_items+=("$item")
+done < <(
+  osascript -e 'tell application "System Events" to get the name of every login item' 2>/dev/null \
+    | tr ',' '\n' \
+    | sed 's/^ *//;s/ *$//' \
+  || echo ""
+)
+
+if (( ${#system_items[@]} == 0 )); then
+  warn "Could not retrieve system login items (Automation permission may be needed)"
+  warn "Grant Terminal access in: System Settings > Privacy > Automation"
+  exit 1
+fi
+
+# Extract managed login items from post-install script
+managed_items=()
+while IFS= read -r line; do
+  # Match lines like: add_login_item "/Applications/Foo.app"
+  if [[ "$line" =~ add_login_item[[:space:]]+\"(/Applications/([^\"]+)\.app)\" ]]; then
+    managed_items+=("${BASH_REMATCH[2]}")
+  fi
+done < "$POST_INSTALL"
+
+log "System login items: ${#system_items[@]}"
+log "Managed in post-install: ${#managed_items[@]}"
+echo ""
+
+# Find items on system but not managed
+unmanaged=()
+for sys_item in "${system_items[@]}"; do
+  found=0
+  for managed in "${managed_items[@]}"; do
+    if [[ "$sys_item" == "$managed" ]]; then
+      found=1
+      break
+    fi
+  done
+  if (( ! found )); then
+    unmanaged+=("$sys_item")
+  fi
+done
+
+# Find managed items not on system
+missing=()
+for managed in "${managed_items[@]}"; do
+  found=0
+  for sys_item in "${system_items[@]}"; do
+    if [[ "$managed" == "$sys_item" ]]; then
+      found=1
+      break
+    fi
+  done
+  if (( ! found )); then
+    missing+=("$managed")
+  fi
+done
+
+# Report
+if (( ${#unmanaged[@]} > 0 )); then
+  warn "On system but NOT in post-install:"
+  for item in "${unmanaged[@]}"; do
+    printf '    %s+ %s%s\n' "$_GRN" "$item" "$_R" >&2
+  done
+  echo "" >&2
+  log "To add these, append to post-install:"
+  for item in "${unmanaged[@]}"; do
+    info "add_login_item \"/Applications/${item}.app\""
+  done
+else
+  ok "All system login items are managed"
+fi
+
+echo ""
+
+if (( ${#missing[@]} > 0 )); then
+  warn "In post-install but NOT on system:"
+  for item in "${missing[@]}"; do
+    printf '    %s- %s%s\n' "$_RED" "$item" "$_R" >&2
+  done
+  echo "" >&2
+  log "These apps may not be installed, or their login items were removed"
+else
+  ok "All managed login items are present on system"
+fi

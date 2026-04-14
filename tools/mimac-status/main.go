@@ -23,6 +23,7 @@ type severity int
 
 const (
 	sevOK severity = iota
+	sevInfo
 	sevWarn
 	sevFail
 )
@@ -31,6 +32,8 @@ func (s severity) String() string {
 	switch s {
 	case sevOK:
 		return "OK"
+	case sevInfo:
+		return "INFO"
 	case sevWarn:
 		return "WARN"
 	case sevFail:
@@ -51,28 +54,35 @@ type checkResult struct {
 
 // ── Check functions ──────────────────────────────────────────────────────────
 
-func checkDotfiles(repoRoot string) checkResult {
+func checkDotfiles(repoRoot, home string) checkResult {
 	name := "Dotfiles"
-	dotDir := filepath.Join(repoRoot, "dots")
+	dotDir := filepath.Join(repoRoot, "dotfiles")
 
 	info, err := os.Stat(dotDir)
 	if err != nil || !info.IsDir() {
 		return checkResult{
 			name:    name,
 			sev:     sevFail,
-			summary: "dots/ directory missing",
+			summary: "dotfiles/ directory missing",
 			detail:  fmt.Sprintf("Expected directory: %s", dotDir),
 			fix:     "Run: make setup",
 		}
 	}
 
-	// Check for a few expected dotfiles
-	expected := []string{".bashrc", ".zshrc", ".nanorc"}
-	var missing []string
+	// Check for expected dotfiles and their symlinks
+	expected := []string{".zshrc", ".aliases", ".gitconfig", ".zprofile", ".zshenv"}
+	var missing, unlinked []string
 	for _, f := range expected {
-		p := filepath.Join(dotDir, f)
-		if _, err := os.Stat(p); err != nil {
+		src := filepath.Join(dotDir, f)
+		if _, err := os.Stat(src); err != nil {
 			missing = append(missing, f)
+			continue
+		}
+		// Check if symlinked in home
+		dst := filepath.Join(home, f)
+		link, err := os.Readlink(dst)
+		if err != nil || link != src {
+			unlinked = append(unlinked, f)
 		}
 	}
 
@@ -82,19 +92,29 @@ func checkDotfiles(repoRoot string) checkResult {
 			sev:     sevWarn,
 			summary: fmt.Sprintf("%d expected dotfile(s) missing", len(missing)),
 			detail:  "Missing: " + strings.Join(missing, ", "),
-			fix:     "Check dots/ directory contents",
+			fix:     "Check dotfiles/ directory contents",
+		}
+	}
+
+	if len(unlinked) > 0 {
+		return checkResult{
+			name:    name,
+			sev:     sevInfo,
+			summary: fmt.Sprintf("%d dotfile(s) not linked", len(unlinked)),
+			detail:  "Not linked: " + strings.Join(unlinked, ", "),
+			fix:     "Run: make dotfiles",
 		}
 	}
 
 	return checkResult{
 		name:    name,
 		sev:     sevOK,
-		summary: "Dotfiles present",
-		detail:  fmt.Sprintf("Found %d expected files in %s", len(expected), dotDir),
+		summary: fmt.Sprintf("%d dotfiles linked", len(expected)),
+		detail:  fmt.Sprintf("All expected files present and symlinked from %s", dotDir),
 	}
 }
 
-func checkTools(repoRoot string) checkResult {
+func checkTools(repoRoot, binDir string) checkResult {
 	name := "Tools"
 	toolsDir := filepath.Join(repoRoot, "tools")
 
@@ -298,17 +318,20 @@ func checkShell() checkResult {
 	}
 }
 
-func checkPATH() checkResult {
+func checkPATH(binDir string) checkResult {
 	name := "PATH"
 	pathVar := os.Getenv("PATH")
 	dirs := filepath.SplitList(pathVar)
 
-	// Check for Homebrew in PATH
+	// Check for Homebrew and ~/bin in PATH
 	hasHomebrew := false
+	hasBinDir := false
 	for _, d := range dirs {
 		if strings.Contains(d, "homebrew") || strings.Contains(d, "/usr/local/bin") {
 			hasHomebrew = true
-			break
+		}
+		if d == binDir {
+			hasBinDir = true
 		}
 	}
 
@@ -319,6 +342,16 @@ func checkPATH() checkResult {
 			summary: "Homebrew not in PATH",
 			detail:  "PATH does not include Homebrew directories",
 			fix:     "Add Homebrew to your shell profile",
+		}
+	}
+
+	if !hasBinDir {
+		return checkResult{
+			name:    name,
+			sev:     sevInfo,
+			summary: fmt.Sprintf("%d directories (~/bin missing)", len(dirs)),
+			detail:  fmt.Sprintf("%s is not in PATH\nMiMac tools may not be accessible", binDir),
+			fix:     "Add ~/bin to PATH in your shell profile",
 		}
 	}
 
@@ -425,17 +458,18 @@ func runChecks() []checkResult {
 	home, _ := os.UserHomeDir()
 	stateDir := filepath.Join(home, ".mimac")
 	repoRoot := filepath.Join(home, "MiMac")
+	binDir := filepath.Join(home, "bin")
 
 	return []checkResult{
 		checkHomebrew(),
 		checkBrewfile(repoRoot),
-		checkDotfiles(repoRoot),
-		checkTools(repoRoot),
+		checkDotfiles(repoRoot, home),
+		checkTools(repoRoot, binDir),
 		checkDefaults(stateDir),
 		checkHardening(stateDir),
 		checkBackups(stateDir),
 		checkShell(),
-		checkPATH(),
+		checkPATH(binDir),
 	}
 }
 
@@ -486,6 +520,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 var (
 	styleCheckOK   = lipgloss.NewStyle().Foreground(theme.ColGreen)
+	styleCheckInfo = lipgloss.NewStyle().Foreground(theme.ColAccent)
 	styleCheckWarn = lipgloss.NewStyle().Foreground(theme.ColAmber)
 	styleCheckFail = lipgloss.NewStyle().Foreground(theme.ColRed)
 	styleCheckName = lipgloss.NewStyle().Foreground(theme.ColNormal)
@@ -556,6 +591,8 @@ func (m model) viewLeft(inner, height int) string {
 		switch c.sev {
 		case sevOK:
 			icon = styleCheckOK.Render("✓")
+		case sevInfo:
+			icon = styleCheckInfo.Render("·")
 		case sevWarn:
 			icon = styleCheckWarn.Render("!")
 		case sevFail:
@@ -616,6 +653,8 @@ func (m model) viewRight(inner, height int) string {
 	switch c.sev {
 	case sevOK:
 		sevStyle = styleCheckOK
+	case sevInfo:
+		sevStyle = styleCheckInfo
 	case sevWarn:
 		sevStyle = styleCheckWarn
 	case sevFail:

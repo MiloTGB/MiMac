@@ -1,9 +1,9 @@
 SHELL := $(shell command -v bash)
 REPO_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
-SCRIPTS := scripts
+SCRIPTS := $(REPO_ROOT)/scripts
 BIN_DIR   := $(REPO_ROOT)/bin
 
-.PHONY: all install fix-exec setup brew post-install tools dotfiles defaults trackpad uninstall nuke update updates harden status doctor dock sync sync-commit sync-prune sync-clean setup-dry nuke-execute picker bf mimac-status build-tools manual help snapshot-prefs pull-prefs
+.PHONY: all install fix-exec setup brew post-install tools dotfiles defaults trackpad uninstall nuke update updates harden status doctor dock sync sync-commit sync-prune sync-clean sync-login-items setup-dry nuke-execute picker bf mimac-status build-tools manual help snapshot-prefs pull-prefs
 
 # Build a Go tool: $(call go-build,<binary>,<tool-dir>)
 define go-build
@@ -21,7 +21,15 @@ help: ## Show available make commands
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' \
 		| sort
 
-all: setup brew post-install build-tools ## Full install: setup + brew + post-install + TUI binaries
+all: fix-exec setup brew post-install build-tools ## Full install: setup + brew + post-install + TUI binaries
+	@printf '\n'
+	@printf '\033[1;32m  ✔  MiMac installed successfully.\033[0m\n'
+	@printf '\n'
+	@printf '  Run \033[43;1;30m exec zsh \033[0m to reload your shell.\n'
+	@if [ ! -d "$(HOME)/.mimac/preferences" ]; then \
+		printf '  Preferences not restored — add your SSH key to GitHub and run \033[36mmake pull-prefs\033[0m\n'; \
+	fi
+	@printf '\n'
 
 fix-exec: ## Make scripts and bin files executable
 	@echo "Making scripts and bin executables..."
@@ -94,6 +102,9 @@ sync-prune: ## Preview stale packages to remove (dry-run)
 sync-clean: ## Remove stale packages and commit
 	@"$(SCRIPTS)/sync" -p -c
 
+sync-login-items: ## Sync system login items into post-install
+	@"$(SCRIPTS)/sync-login-items"
+
 snapshot-prefs: ## Export app preferences and push to mimac-prefs
 	@"$(SCRIPTS)/snapshot-prefs"
 
@@ -106,12 +117,22 @@ build-tools: ## Build all Go TUI binaries (requires Go)
 
 picker: ## Build the mimac-picker TUI binary
 	$(call go-build,mimac-picker,picker)
+	@mkdir -p "$(HOME)/bin"
+	@ln -sf "$(BIN_DIR)/mimac-picker" "$(HOME)/bin/mimac-picker"
+	@printf '  \033[32m✓\033[0m mimac-picker → ~/bin/mimac-picker\n'
 
 bf: ## Build the bf Brewfile manager TUI binary
 	$(call go-build,bf,bf)
+	@mkdir -p "$(HOME)/bin"
+	@ln -sf "$(BIN_DIR)/bf" "$(HOME)/bin/bf"
+	@printf '  \033[32m✓\033[0m bf → ~/bin/bf\n'
 
 mimac-status: ## Build the mimac-status health dashboard TUI binary
 	$(call go-build,mimac-status,mimac-status)
+	@mkdir -p "$(HOME)/bin"
+	@ln -sf "$(BIN_DIR)/mimac-status" "$(HOME)/bin/mimac-status"
+	@ln -sf "$(BIN_DIR)/mimac-status" "$(HOME)/bin/status"
+	@printf '  \033[32m✓\033[0m mimac-status → ~/bin/mimac-status\n'
 
 manual: ## Regenerate docs/index.html from docs/manual.md (requires pandoc)
 	@if ! command -v pandoc >/dev/null 2>&1; then \

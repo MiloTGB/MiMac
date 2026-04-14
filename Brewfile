@@ -27,10 +27,15 @@ brew "pwgen"
 brew "speedtest-cli"
 brew "tealdeer"
 brew "topgrade"
+brew "trash"
+brew "tree"
+brew "watch"
+brew "wget"
 brew "zip"
 brew "zsh"
 
 # Development
+brew "go"
 brew "node"
 brew "openjdk"
 brew "pipx"
@@ -45,26 +50,26 @@ brew "ffmpeg"
 brew "sox"
 
 # Applications
-cask "4k-video-downloader+"
-cask "appcleaner"
-cask "audio-hijack"
-cask "brave-browser"
-cask "canva"
-cask "discord"
-cask "google-chrome"
-cask "iterm2"
-cask "keyboardcleantool"
-cask "libreoffice"
-cask "loopback"
-cask "mediainfo"
-cask "minecraft"
-cask "notunes"
-cask "obs"
-cask "pearcleaner"
-cask "scratch"
-cask "soundsource"
-cask "steam"
-cask "the-unarchiver"
-cask "vlc"
-cask "whatsapp"
-cask "zoom"
+cask "4k-video-downloader+", greedy: true
+cask "appcleaner", greedy: true
+cask "audio-hijack", greedy: true
+cask "brave-browser", greedy: true
+cask "canva", greedy: true
+cask "discord", greedy: true
+cask "google-chrome", greedy: true
+cask "iterm2", greedy: true
+cask "keyboardcleantool", greedy: true
+cask "libreoffice", greedy: true
+cask "loopback", greedy: true
+cask "mediainfo", greedy: true
+cask "minecraft", greedy: true
+cask "notunes", greedy: true
+cask "obs", greedy: true
+cask "pearcleaner", greedy: true
+cask "scratch", greedy: true
+cask "soundsource", greedy: true
+cask "steam", greedy: true
+cask "the-unarchiver", greedy: true
+cask "vlc", greedy: true
+cask "whatsapp", greedy: true
+cask "zoom", greedy: true
