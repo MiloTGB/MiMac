@@ -66,38 +66,47 @@ done
 verbose() { (( VERBOSE )) && log "$*" || true; }
 
 # Move a file or directory to Trash instead of deleting it.
-# Tries: trash CLI → osascript Finder → manual mv to ~/.Trash
+# Tries: manual mv to ~/.Trash → osascript Finder → trash CLI
+# Never falls back to rm — if we can't trash it, we fail.
 to_trash() {
   local target="$1"
   [[ -e "$target" || -L "$target" ]] || return 0
 
-  # 1. trash CLI (Homebrew)
-  if command -v trash >/dev/null 2>&1; then
-    trash "$target" 2>/dev/null && return 0
-  fi
-
-  # 2. osascript (Finder)
-  if command -v osascript >/dev/null 2>&1; then
-    # Resolve symlinks for Finder (it needs the real path for POSIX file)
-    if [[ -L "$target" ]]; then
-      # Symlinks: Finder can't trash them via POSIX file, fall through
-      :
-    elif osascript -e "tell application \"Finder\" to delete POSIX file \"$target\"" >/dev/null 2>&1; then
-      return 0
-    fi
-  fi
-
-  # 3. Manual move to ~/.Trash
   local name
   name="$(basename "$target")"
   local dest="$HOME/.Trash/$name"
   if [[ -e "$dest" || -L "$dest" ]]; then
     dest="$HOME/.Trash/${name}-$(date +%Y%m%d-%H%M%S)"
   fi
-  mv "$target" "$dest" 2>/dev/null && return 0
 
-  # 4. Last resort for dangling symlinks
-  rm -f "$target" 2>/dev/null
+  # 1. Direct move to ~/.Trash (works for files, dirs, and symlinks)
+  if mv "$target" "$dest" 2>/dev/null; then
+    return 0
+  fi
+
+  # 2. osascript Finder (works for non-symlink files and dirs)
+  if [[ ! -L "$target" ]] && command -v osascript >/dev/null 2>&1; then
+    if osascript -e "tell application \"Finder\" to delete POSIX file \"$target\"" >/dev/null 2>&1; then
+      return 0
+    fi
+  fi
+
+  # 3. trash CLI (Homebrew keg-only — try both PATH and direct path)
+  local trash_bin=""
+  if command -v trash >/dev/null 2>&1; then
+    trash_bin="trash"
+  elif [[ -x "/opt/homebrew/opt/trash/bin/trash" ]]; then
+    trash_bin="/opt/homebrew/opt/trash/bin/trash"
+  fi
+  if [[ -n "$trash_bin" ]]; then
+    if "$trash_bin" "$target" 2>/dev/null; then
+      return 0
+    fi
+  fi
+
+  # All methods failed — do NOT fall back to rm
+  err "Could not move to Trash: $target"
+  return 1
 }
 
 if (( DRY_RUN )); then
