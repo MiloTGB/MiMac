@@ -268,7 +268,7 @@ phase_link_tools() {
       base="$(basename "$f")"
       
       if (( total > 0 )); then
-        printf "\r[%d/%d] Linking %s..." "$current" "$total" "$base" >&2 || true
+        printf "\r\033[K[%d/%d] Linking %s..." "$current" "$total" "$base" >&2 || true
       fi
       
       # Skip if symlink already points to correct target
@@ -324,7 +324,7 @@ phase_link_tools() {
       base="$(basename "$f")"
       
       if (( bin_total > 0 )); then
-        printf "\r[%d/%d] Linking %s..." "$current" "$bin_total" "$base" >&2 || true
+        printf "\r\033[K[%d/%d] Linking %s..." "$current" "$bin_total" "$base" >&2 || true
       fi
       
       # Skip if symlink already points to correct target
@@ -424,7 +424,7 @@ phase_dotfiles() {
     dst="$HOME/$(basename "$src")"
     
     if (( total > 0 )); then
-      printf "\r[%d/%d] Processing %s..." "$current" "$total" "$(basename "$src")" >&2 || true
+      printf "\r\033[K[%d/%d] Processing %s..." "$current" "$total" "$(basename "$src")" >&2 || true
     fi
     
     # Skip if symlink already points to correct target
