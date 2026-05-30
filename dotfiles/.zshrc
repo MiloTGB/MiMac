@@ -79,4 +79,4 @@ fi
 [[ -x "$HOME/bin/check-updates" ]] && "$HOME/bin/check-updates"
 
 # --- Shell Welcome ---
-command -v fastfetch >/dev/null 2>&1 && fastfetch
+[[ -o login ]] && command -v fastfetch >/dev/null 2>&1 && fastfetch

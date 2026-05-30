@@ -2,7 +2,7 @@
 assume_yes = true
 pre_sudo = true
 sudo_command = "sudo"
-disable = ["system", "pnpm", "npm"]
+disable = ["system", "pnpm", "node"]
 ignore_failures = ["pnpm"]
 no_retry = true
 cleanup = true
