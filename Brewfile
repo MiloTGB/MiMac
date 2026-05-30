@@ -19,18 +19,14 @@ brew "nanorc"
 brew "ncdu"
 brew "nethogs"
 brew "nmap"
-brew "node@22"
 brew "openssh"
 brew "osx-cpu-temp"
 brew "pandoc"
 brew "pwgen"
-brew "speedtest-cli"
 brew "tealdeer"
 brew "topgrade"
 brew "trash"
 brew "tree"
-brew "watch"
-brew "wget"
 brew "zip"
 brew "zsh"
 
@@ -40,7 +36,6 @@ brew "node"
 brew "openjdk"
 brew "pipx"
 brew "pyenv"
-brew "python@3.12"
 brew "ripgrep"
 brew "shellcheck"
 brew "shfmt"
@@ -67,7 +62,6 @@ cask "notunes", greedy: true
 cask "obs", greedy: true
 cask "pearcleaner", greedy: true
 cask "scratch", greedy: true
-cask "soundsource", greedy: true
 cask "steam", greedy: true
 cask "the-unarchiver", greedy: true
 cask "vlc", greedy: true
