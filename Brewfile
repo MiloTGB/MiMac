@@ -56,7 +56,6 @@ cask "iterm2", greedy: true
 cask "keyboardcleantool", greedy: true
 cask "libreoffice", greedy: true
 cask "loopback", greedy: true
-cask "mediainfo", greedy: true
 cask "minecraft", greedy: true
 cask "notunes", greedy: true
 cask "obs", greedy: true
