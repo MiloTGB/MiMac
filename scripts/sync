@@ -77,8 +77,8 @@ eval "$($HOMEBREW shellenv)"
 TEMP_BREWFILE=""
 TEMP_INSERTIONS=""
 cleanup() {
-  [[ -n "$TEMP_BREWFILE"   && -f "$TEMP_BREWFILE"   ]] && rm -f "$TEMP_BREWFILE"   || true
-  [[ -n "$TEMP_INSERTIONS" && -f "$TEMP_INSERTIONS" ]] && rm -f "$TEMP_INSERTIONS" || true
+  [[ -n "$TEMP_BREWFILE"   && -f "$TEMP_BREWFILE"   ]] && rm -f "$TEMP_BREWFILE"
+  [[ -n "$TEMP_INSERTIONS" && -f "$TEMP_INSERTIONS" ]] && rm -f "$TEMP_INSERTIONS"
 }
 trap cleanup EXIT INT TERM
 

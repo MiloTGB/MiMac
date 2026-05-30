@@ -44,7 +44,7 @@ if (( have_sudo )); then
     log "Enabling Touch ID for sudo"
     if sudo cp /etc/pam.d/sudo /etc/pam.d/sudo.backup.mimac 2>/dev/null; then
       rollback "sudo mv /etc/pam.d/sudo.backup.mimac /etc/pam.d/sudo"
-      tmpfile="$(mktemp)"
+      tmpfile="$(mktemp)" || { warn "Cannot create temp file"; return 1; }
       { echo 'auth       sufficient     pam_tid.so'; cat /etc/pam.d/sudo; } > "$tmpfile"
       # Verify temp file is valid before overwriting system config
       if [[ ! -s "$tmpfile" ]] || ! grep -q 'pam_tid.so' "$tmpfile" || ! grep -q 'pam_smartcard.so\|pam_opendirectory.so' "$tmpfile"; then
@@ -73,8 +73,8 @@ fi
 log "Requiring password immediately on wake"
 prev1=$(defaults read com.apple.screensaver askForPassword 2>/dev/null || echo "0")
 prev2=$(defaults read com.apple.screensaver askForPasswordDelay 2>/dev/null || echo "0")
-rollback "defaults write com.apple.screensaver askForPassword -int ${prev1:-0}"
-rollback "defaults write com.apple.screensaver askForPasswordDelay -int ${prev2:-0}"
+rollback "defaults write com.apple.screensaver askForPassword -int $(printf '%q' "${prev1:-0}")"
+rollback "defaults write com.apple.screensaver askForPasswordDelay -int $(printf '%q' "${prev2:-0}")"
 defaults write com.apple.screensaver askForPassword -int 1
 defaults write com.apple.screensaver askForPasswordDelay -int 0
 
@@ -82,7 +82,7 @@ defaults write com.apple.screensaver askForPasswordDelay -int 0
 if (( have_sudo )); then
   log "Enabling macOS firewall (global on, stealth on)"
   prev=$(/usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate 2>/dev/null | awk '{print $3}' || echo "off")
-  rollback "/usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate ${prev:-off}"
+  rollback "/usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate $(printf '%q' "${prev:-off}")"
   if sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on 2>/dev/null; then
     if sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setstealthmode on 2>/dev/null; then
       log "Firewall enabled with stealth mode"

@@ -439,7 +439,7 @@ phase_dotfiles() {
         ((backed_up++)) || true
       else
         log "Backing up: $dst -> $BACKUP_DIR/$(basename "$dst")"
-        if ! mv "$dst" "$BACKUP_DIR/" || [[ ! -e "$BACKUP_DIR/$(basename "$dst")" ]]; then
+        if ! mv "$dst" "$BACKUP_DIR/"; then
           err "Failed to backup $dst - aborting dotfile linking"
           shopt -u dotglob nullglob
           printf "\r" >&2 || true

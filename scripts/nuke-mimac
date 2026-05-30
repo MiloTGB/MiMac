@@ -86,7 +86,12 @@ to_trash() {
 
   # 2. osascript Finder (works for non-symlink files and dirs)
   if [[ ! -L "$target" ]] && command -v osascript >/dev/null 2>&1; then
-    if osascript -e "tell application \"Finder\" to delete POSIX file \"$target\"" >/dev/null 2>&1; then
+    if osascript - "$target" <<'EOF' >/dev/null 2>&1
+on run argv
+  tell application "Finder" to delete POSIX file (item 1 of argv)
+end run
+EOF
+    then
       return 0
     fi
   fi

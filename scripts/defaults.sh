@@ -56,16 +56,16 @@ write_default(){
     local escaped_current
     escaped_current=$(printf '%q' "$current")
     if [[ "$current" =~ ^(true|false)$ ]]; then
-      backup_line "defaults write $domain $key -bool $current"
+      backup_line "defaults write $(printf '%q' "$domain") $(printf '%q' "$key") -bool $current"
     elif [[ "$current" =~ ^[0-9]+\.[0-9]+$ ]]; then
-      backup_line "defaults write $domain $key -float $current"
+      backup_line "defaults write $(printf '%q' "$domain") $(printf '%q' "$key") -float $current"
     elif [[ "$current" =~ ^[0-9]+$ ]]; then
-      backup_line "defaults write $domain $key -int $current"
+      backup_line "defaults write $(printf '%q' "$domain") $(printf '%q' "$key") -int $current"
     else
-      backup_line "defaults write $domain $key -string $escaped_current"
+      backup_line "defaults write $(printf '%q' "$domain") $(printf '%q' "$key") -string $escaped_current"
     fi
   else
-    backup_line "defaults delete $domain $key >/dev/null 2>&1 || true"
+    backup_line "defaults delete $(printf '%q' "$domain") $(printf '%q' "$key") >/dev/null 2>&1 || true"
   fi
   case "$type" in
     bool)   defaults write "$domain" "$key" -bool "$value" || return 1 ;;

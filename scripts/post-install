@@ -395,8 +395,11 @@ SCPT
     return 1
   }
 
-  if ! osascript <<EOF >/dev/null 2>&1
-tell application "System Events" to make login item at end with properties {path:"$app_path", hidden:false}
+  if ! osascript - "$app_path" <<'EOF' >/dev/null 2>&1
+on run argv
+  set appPath to item 1 of argv
+  tell application "System Events" to make login item at end with properties {path:appPath, hidden:false}
+end run
 EOF
   then
     log "Failed to add login item: $app_name"
