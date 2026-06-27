@@ -148,7 +148,7 @@ command -v topgrade >/dev/null 2>&1 && alias update='topgrade'
 # Reload the shell completely for a clean state.
 c() {
   echo "Reloading shell..."
-  clear && exec zsh
+  clear && exec zsh -l
 }
 
 # Commit, pull --rebase, and push helper. Usage: pushit "message"
