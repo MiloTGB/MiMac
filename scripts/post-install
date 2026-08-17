@@ -378,22 +378,22 @@ add_login_item(){
 
   # Check/add login items via System Events (requires Automation permission)
   local osascript_err
-  osascript_err=$(osascript <<'SCPT' 2>&1
+  if osascript_err=$(osascript <<'SCPT' 2>&1
 tell application "System Events" to get the name of every login item
 SCPT
-  ) && {
+  ); then
     if echo "$osascript_err" | grep -qF "$app_name"; then
       log "Login item already exists: $app_name"
       return 0
     fi
-  } || {
+  else
     if echo "$osascript_err" | grep -qF "Not authorized"; then
       log "Cannot manage login items (Automation permission not granted)"
       log "  → Add $app_name manually: System Settings → General → Login Items"
       return 0
     fi
     return 1
-  }
+  fi
 
   if ! osascript - "$app_path" <<'EOF' >/dev/null 2>&1
 on run argv
