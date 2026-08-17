@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# Discord
+rm -rf "$HOME/Library/Application Support/discord/Cache"
+rm -rf "$HOME/Library/Application Support/discord/Code Cache"
+rm -rf "$HOME/Library/Caches/com.hnc.Discord"
+
+# Google Chrome
+rm -rf "$HOME/Library/Caches/Google/Chrome/Default/Cache"
+rm -rf "$HOME/Library/Caches/Google/Chrome/Default/Code Cache"
+rm -rf "$HOME/Library/Caches/Google/Chrome/Default/Media Cache"
+
+echo "Cleared caches for Discord and Google Chrome."

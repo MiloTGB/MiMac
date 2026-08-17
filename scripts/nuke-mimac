@@ -49,7 +49,7 @@ WARNING: --execute will:
   • Move all MiMac tool symlinks from ~/bin to Trash
   • Execute defaults and hardening rollback scripts
   • Move ~/.mimac state directory to Trash
-  • Optionally move MiMac and mimac-prefs repositories to Trash
+  • Optionally move MiMac repository to Trash
   • Optionally uninstall Homebrew packages
 
 Everything is moved to Trash (recoverable) — nothing is permanently deleted.
@@ -236,8 +236,7 @@ fi
 # ─── 5. Repository cleanup (will prompt) ─────────────────────────────────────
 
 repos_to_delete=()
-[[ -d "$HOME/MiMac" ]] && repos_to_delete+=("$HOME/MiMac")
-[[ -d "$HOME/mimac-prefs" ]] && repos_to_delete+=("$HOME/mimac-prefs")
+[[ -d "$HOME/MiMac" ]] &&  repos_to_delete=("$REPO_ROOT")
 
 if (( ${#repos_to_delete[@]} > 0 )); then
   operations_summary+="? Optional: Move ${#repos_to_delete[@]} repository/repositories to Trash (will prompt)"$'\n'

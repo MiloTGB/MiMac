@@ -45,20 +45,22 @@ brew "ffmpeg"
 brew "sox"
 
 # Applications
-cask "4k-video-downloader+", greedy: true
+cask "adapter", greedy: true
+cask "antigravity", greedy: true
 cask "appcleaner", greedy: true
 cask "audio-hijack", greedy: true
 cask "brave-browser", greedy: true
 cask "canva", greedy: true
 cask "discord", greedy: true
+cask "etrecheckpro", greedy: true
 cask "google-chrome", greedy: true
+cask "google-drive", greedy: true
 cask "iterm2", greedy: true
 cask "keyboardcleantool", greedy: true
 cask "libreoffice", greedy: true
 cask "loopback", greedy: true
 cask "minecraft", greedy: true
 cask "notunes", greedy: true
-cask "obs", greedy: true
 cask "pearcleaner", greedy: true
 cask "scratch", greedy: true
 cask "steam", greedy: true

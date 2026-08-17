@@ -23,6 +23,12 @@ source "$SCRIPT_DIR/lib.sh"
 failed=0
 incr_failed(){ failed=$((failed + 1)); }
 
+PLIST_BACKUP_DIR="$STATE_DIR/plist-backups"
+ROLLBACK="${ROLLBACK:-$STATE_DIR/defaults-rollback.sh}"
+# Initialize rollback script if it doesn't exist
+[[ -f "$ROLLBACK" ]] || touch "$ROLLBACK"
+
+
 # Run a defaults script, log the result
 apply_defaults(){
   local script="$1" name="$2"
@@ -153,7 +159,6 @@ fi
 
 BROWSERS_DIR="$REPO_ROOT/assets/browsers"
 
-
 # Google Chrome
 if [[ -d "/Applications/Google Chrome.app" ]]; then
   install_browser_policy "$BROWSERS_DIR/chrome-policy.json" \
@@ -195,6 +200,59 @@ else
 fi
 
 ###############################################################################
+# Companion apps (installed from GitHub releases)                             #
+###############################################################################
+
+install_github_app(){
+  local app_path="$1" repo="$2" name="$3"
+  # Install-only: skips if the app is already present.
+  if [[ -d "$app_path" ]]; then
+    log "$name already installed — skipping"
+    return 0
+  fi
+  local dmg_url
+  dmg_url=$(curl -sf "https://api.github.com/repos/${repo}/releases/latest" \
+    | grep -oE '"browser_download_url": "[^"]+"' | grep "\.dmg" | head -1 | cut -d '"' -f 4)
+  if [[ -z "$dmg_url" ]]; then
+    log "Warning: could not find $name DMG in latest release"
+    return 1
+  fi
+  name="${name//[^[:alnum:]._-]/}"
+  local tmp_dmg tmp_mount
+  tmp_dmg=$(mktemp)
+  tmp_mount=$(mktemp -d)
+  _cleanup_github_app() {
+    hdiutil detach "$tmp_mount" -quiet 2>/dev/null || true
+    rm -f "$tmp_dmg"
+    rm -rf "$tmp_mount" 2>/dev/null || true
+  }
+  trap _cleanup_github_app EXIT
+  log "Downloading $name..."
+  curl -L -sf -o "$tmp_dmg" "$dmg_url" || { log "Warning: failed to download $name"; rm -f "$tmp_dmg"; return 1; }
+  hdiutil attach "$tmp_dmg" -mountpoint "$tmp_mount" -quiet -nobrowse \
+    || { log "Warning: failed to mount $name DMG"; rm -f "$tmp_dmg"; rm -rf "$tmp_mount" 2>/dev/null; return 1; }
+  local found_app
+  found_app=$(find "$tmp_mount" -maxdepth 2 -name "*.app" -type d | head -1)
+  if [[ -z "$found_app" ]]; then
+    log "Warning: no .app found in $name DMG"
+    hdiutil detach "$tmp_mount" -quiet; rm -f "$tmp_dmg"; return 1
+  fi
+  cp -R "$found_app" /Applications/ \
+    || { log "Warning: failed to copy $name to /Applications"; hdiutil detach "$tmp_mount" -quiet; rm -f "$tmp_dmg"; return 1; }
+  hdiutil detach "$tmp_mount" -quiet
+  rm -f "$tmp_dmg"
+  rm -rf "$tmp_mount" 2>/dev/null || true
+  trap - EXIT
+  if [[ -d "$app_path" ]]; then
+    xattr -cr "$app_path" 2>/dev/null || true
+  fi
+  log "Installed $name → $app_path"
+}
+
+install_github_app "/Applications/Barkeep.app" "sevmorris/Barkeep" "Barkeep" || incr_failed
+
+
+###############################################################################
 # Application preferences — defaults write scripts                            #
 ###############################################################################
 
@@ -215,34 +273,14 @@ else
 fi
 
 ###############################################################################
-# Preferences auto-pull                                                       #
+# Preferences directory setup                                                 #
 ###############################################################################
 
-PREFS_REPO="git@github.com:MiloTGB/mimac-prefs.git"
 LOCAL_PREFS_DIR="$HOME/.mimac/preferences"
-
-_ssh_ok=0
-if ssh -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
-  _ssh_ok=1
-fi
-
-if [[ ! -d "$LOCAL_PREFS_DIR/.git" ]]; then
-  if (( _ssh_ok )); then
-    log "Cloning mimac-prefs..."
-    mkdir -p "$(dirname "$LOCAL_PREFS_DIR")"
-    git clone "$PREFS_REPO" "$LOCAL_PREFS_DIR" 2>/dev/null || {
-      log "Warning: failed to clone mimac-prefs (SSH key may not have access)"
-    }
-  else
-    log "Skipping mimac-prefs auto-pull (SSH not authenticated with GitHub)"
-    log "  → Run: make pull-prefs (after adding SSH key to GitHub)"
-  fi
-else
-  log "Preferences repo already present at $LOCAL_PREFS_DIR"
-fi
+mkdir -p "$LOCAL_PREFS_DIR"
 
 # Switch MiMac repo remote from HTTPS to SSH if possible
-if (( _ssh_ok )); then
+if ssh -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
   _current_url=$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null || true)
   if [[ "$_current_url" == https://* ]]; then
     _ssh_url="${_current_url/https:\/\/github.com\//git@github.com:}"
@@ -255,24 +293,45 @@ fi
 # Application preferences — plist imports                                     #
 ###############################################################################
 
+# Snapshot the current state of a defaults domain into PLIST_BACKUP_DIR
+backup_plist(){
+  local domain="$1"
+  mkdir -p "$PLIST_BACKUP_DIR"
+  defaults export "$domain" "$PLIST_BACKUP_DIR/${domain}.plist" 2>/dev/null || true
+}
+
 # Import a full plist if the app is installed and not already configured
 import_plist(){
   local app_path="$1" bundle_id="$2" plist_file="$3" name="$4"
   if [[ ! -d "$app_path" ]]; then
-    log "Skipping $name plist (not installed)"
+    logskip "$name plist" "not installed"
     return 0
   fi
   if [[ ! -f "$plist_file" ]]; then
-    log "Skipping $name plist (asset missing)"
+    logskip "$name plist" "asset missing"
     return 0
   fi
   # Only import if the app hasn't been configured yet (no existing plist)
   local existing="$HOME/Library/Preferences/${bundle_id}.plist"
   if [[ -f "$existing" ]]; then
-    log "$name plist already exists — skipping import (won't overwrite)"
+    logskip "$name plist" "exists — skipping import (won't overwrite)"
     return 0
   fi
-  defaults import "$bundle_id" "$plist_file"
+
+  backup_plist "$bundle_id"
+  defaults import "$bundle_id" "$plist_file" || return 1
+
+  {
+    if [[ -f "$PLIST_BACKUP_DIR/${bundle_id}.plist" ]]; then
+      printf 'defaults import %s %s\n' \
+        "$(printf '%q' "$bundle_id")" \
+        "$(printf '%q' "$PLIST_BACKUP_DIR/${bundle_id}.plist")"
+    else
+      printf 'defaults delete %s >/dev/null 2>&1 || true\n' \
+        "$(printf '%q' "$bundle_id")"
+    fi
+  } >> "$ROLLBACK"
+
   log "Imported $name preferences"
 }
 
@@ -288,38 +347,7 @@ import_plist "/Applications/Loopback.app" "com.rogueamoeba.Loopback" \
 import_plist "/Applications/SoundSource.app" "com.rogueamoeba.soundsource" \
   "$LOCAL_PREFS_DIR/SoundSource.plist" "SoundSource" || incr_failed
 
-import_plist "/Applications/BetterSnapTool.app" "com.hegenberg.BetterSnapTool" \
-  "$LOCAL_PREFS_DIR/BetterSnapTool.plist" "BetterSnapTool" || incr_failed
 
-import_plist "/Applications/Ice.app" "com.jordanbaird.Ice" \
-  "$LOCAL_PREFS_DIR/Ice.plist" "Ice" || incr_failed
-
-import_plist "/Applications/Raycast.app" "com.raycast.macos" \
-  "$LOCAL_PREFS_DIR/Raycast.plist" "Raycast" || incr_failed
-
-import_plist "/Applications/Stats.app" "eu.exelban.Stats" \
-  "$LOCAL_PREFS_DIR/Stats.plist" "Stats" || incr_failed
-
-import_plist "/Applications/Farrago.app" "com.rogueamoeba.farrago" \
-  "$LOCAL_PREFS_DIR/Farrago.plist" "Farrago" || incr_failed
-
-import_plist "/Applications/Piezo.app" "com.rogueamoeba.Piezo" \
-  "$LOCAL_PREFS_DIR/Piezo.plist" "Piezo" || incr_failed
-
-import_plist "/Applications/Typora.app" "abnerworks.Typora" \
-  "$LOCAL_PREFS_DIR/Typora.plist" "Typora" || incr_failed
-
-import_plist "/Applications/Hot.app" "com.xs-labs.Hot" \
-  "$LOCAL_PREFS_DIR/Hot.plist" "Hot" || incr_failed
-
-import_plist "/Applications/Keka.app" "com.aone.keka" \
-  "$LOCAL_PREFS_DIR/Keka.plist" "Keka" || incr_failed
-
-import_plist "/Applications/TimeMachineEditor.app" "com.tclementdev.timemachineeditor.application" \
-  "$LOCAL_PREFS_DIR/TimeMachineEditor.plist" "TimeMachineEditor" || incr_failed
-
-import_plist "/Applications/MacWhisper.app" "com.goodsnooze.MacWhisper" \
-  "$LOCAL_PREFS_DIR/MacWhisper.plist" "MacWhisper" || incr_failed
 
 ###############################################################################
 # Application Support restore                                                #
@@ -410,9 +438,9 @@ EOF
 }
 
 # Add login items for apps on this machine
-add_login_item "/Applications/noTunes.app"          || incr_failed
-add_login_item "/Applications/SoundSource.app"      || incr_failed
-add_login_item "/Applications/Loopback.app"         || incr_failed
+add_login_item "/Applications/noTunes.app"          || failed=$(( failed + 1 ))
+add_login_item "/Applications/SoundSource.app"      || failed=$(( failed + 1 ))
+add_login_item "/Applications/Loopback.app"         || failed=$(( failed + 1 ))
 
 ###############################################################################
 # Summary                                                                     #

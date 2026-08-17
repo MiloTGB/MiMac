@@ -34,8 +34,7 @@ Run `make all` to execute all three phases at once. Phases are independent — r
 | `make post-install` | Phase 3 (app config) |
 | `make all` | All three phases |
 | `make sync` | Snapshot installed Homebrew packages into the Brewfile |
-| `make snapshot-prefs` | Export app preferences and push to mimac-prefs |
-| `make pull-prefs` | Clone or pull app preferences from mimac-prefs |
+| `make snapshot-prefs` | Export app preferences |
 | `make tools` | Link scripts into `~/bin` only |
 | `make dotfiles` | Symlink dotfiles only |
 | `make defaults` | Apply macOS defaults only |
@@ -145,7 +144,6 @@ MiMac/
     ├── post-install    # Phase 3
     ├── sync            # Brewfile sync
     ├── snapshot-prefs  # Export app preferences
-    ├── pull-prefs      # Pull app preferences
     ├── dock-setup      # Dock layout
     ├── status          # Installation status
     ├── defaults.sh     # macOS defaults

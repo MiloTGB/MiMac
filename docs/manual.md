@@ -13,13 +13,13 @@ date: "[github.com/MiloTGB/MiMac](https://github.com/MiloTGB/MiMac)"
 | Repo | Location | Purpose |
 |---|---|---|
 | `MiloTGB/MiMac` | `~/MiMac/` | Public bootstrap repo |
-| `MiloTGB/mimac-prefs` | `~/.mimac/preferences/` | Private app preferences |
+| `~/.mimac/preferences/` | `~/.mimac/preferences/` | Local app preferences backups |
 
 The two-repo split keeps personal preference data (iTerm2 profiles, Audio Hijack settings, etc.) out of the public repo while still making them fully portable across machines.
 
 As long as both repos are kept current, the entire setup can be fully restored on a new machine from scratch — nothing needs to be manually transferred. The repos are the source of truth.
 
-> **Adapting for your own use:** This project is built around a specific setup. If you fork it, you'll need to replace `MiloTGB/mimac-prefs` with your own private preferences repo, swap in your own dotfiles, and review the app lists in `scripts/post-install` and `scripts/snapshot-prefs` to match your environment.
+> **Adapting for your own use:** This project is built around a specific setup. If you fork it, you'll need to swap in your own dotfiles, and review the app lists in `scripts/post-install` and `scripts/snapshot-prefs` to match your environment.
 
 ---
 
@@ -89,7 +89,7 @@ Configures installed apps. Must be run after Phase 2.
 - **Topgrade:** Links `assets/topgrade.toml` to `~/.config/topgrade.toml`
 - **Browsers:** Applies Chrome/Brave managed policies; opens extension install URLs on request
 - **App defaults:** Applies `defaults write` settings for Audio Hijack, Rogue Amoeba update settings
-- **Preferences auto-pull:** If `~/.mimac/preferences/` is absent and SSH is authenticated to GitHub, automatically clones `mimac-prefs`
+- **Preferences import:** Imports preferences from `~/.mimac/preferences/` into the system
 - **Plist imports:** Imports personal preference plists; skips any app that already has a preferences file (non-destructive)
 - **App Support restore:** Restores Loopback and SoundSource configuration files (non-destructive)
 - **Login items:** Registers login items for installed apps
@@ -158,22 +158,11 @@ make snapshot-prefs
 
 **How snapshot-prefs works:**
 
-1. Exports the preference plist for each of the 15 managed apps using `defaults export`
-2. Copies Loopback and SoundSource Application Support files
-3. Commits all changes to `~/.mimac/preferences/` with a timestamped message
-4. Pushes to `MiloTGB/mimac-prefs` on GitHub
+1. Exports the preference plist for each of the managed apps using `defaults export`
+2. Copies app-specific Application Support files (e.g. Loopback)
+3. Saves all changes locally to `~/.mimac/preferences/`
 
-Snapshots are idempotent — if nothing changed, it reports "No changes to push."
-
-## Pulling App Preferences (`make pull-prefs`)
-
-```bash
-make pull-prefs
-```
-
-Clones `mimac-prefs` into `~/.mimac/preferences/` if it doesn't exist, or fast-forward pulls if it does.
-
-> **Note:** `make post-install` does this automatically if `~/.mimac/preferences/` is absent and your SSH key is authenticated with GitHub.
+Snapshots are idempotent — if nothing changed, they won't overwrite the file.
 
 ## Updating This Manual (`make manual`)
 
@@ -215,7 +204,7 @@ Captures any packages installed since the last sync and commits the updated Brew
 make snapshot-prefs
 ```
 
-Exports and pushes all app preference plists plus Application Support files. Verify the push succeeded — you should see "Pushed to git@github.com:MiloTGB/mimac-prefs.git" in the output.
+Exports all app preference plists plus Application Support files directly to `~/.mimac/preferences/`.
 
 **3. Push any pending MiMac changes**
 
@@ -232,7 +221,7 @@ ssh -T git@github.com
 # Expected: Hi MiloTGB! You've successfully authenticated...
 ```
 
-The new machine needs your SSH key to auto-pull mimac-prefs during `make post-install`.
+
 
 **5. Note anything not covered by MiMac**
 
@@ -262,12 +251,9 @@ git clone git@github.com:MiloTGB/MiMac.git ~/MiMac
 ```
 
 **If SSH is not yet configured** (fresh machine), clone over HTTPS first:
-
 ```bash
 git clone https://github.com/MiloTGB/MiMac.git ~/MiMac
 ```
-
-Then generate and add your SSH key to GitHub before continuing, so mimac-prefs can be pulled automatically in Phase 3.
 
 ## Step 2 — Phase 1: Shell & Dotfiles
 
@@ -309,14 +295,9 @@ Installs Homebrew (if needed) and all packages from the Brewfile. This step take
 make post-install
 ```
 
-This configures apps, imports your personal preferences, and sets up login items. If SSH is authenticated, it automatically pulls your preferences from `mimac-prefs`.
+This configures apps, imports your personal preferences from `~/.mimac/preferences/`, and sets up login items.
 
-If `~/.mimac/preferences/` is not populated (SSH wasn't ready), run manually:
-
-```bash
-make pull-prefs
-make post-install   # Re-run to import plists
-```
+If `~/.mimac/preferences/` is not populated (SSH wasn't ready), run `make post-install` again once authentication is ready.
 
 ## Step 6 — Build mimac-picker
 
@@ -357,8 +338,7 @@ make picker
 | `make sync` | Sync installed Homebrew packages into the Brewfile |
 | `make sync ARGS=-c` | Sync and auto-commit the Brewfile |
 | `make sync ARGS=-n` | Dry run — preview additions without modifying the Brewfile |
-| `make snapshot-prefs` | Export app preferences and push to mimac-prefs |
-| `make pull-prefs` | Clone or pull app preferences from mimac-prefs |
+| `make snapshot-prefs` | Export app preferences |
 | `make picker` | Build the mimac-picker TUI binary |
 | `make help` | Show all available commands from `~/` and `MiMac/` |
 
@@ -407,7 +387,7 @@ MiMac writes runtime state to `~/.mimac/` (gitignored):
 
 | File / Directory | Purpose |
 |---|---|
-| `~/.mimac/preferences/` | Cloned from `MiloTGB/mimac-prefs`; app plists + App Support files |
+| `~/.mimac/preferences/` | Local backup of app plists + App Support files |
 | `~/.mimac/backups/` | Timestamped backups of dotfiles that were replaced during setup |
 | `~/.mimac/defaults-rollback.sh` | Shell script to undo all `defaults write` changes |
 | `~/.mimac/hardening-rollback.sh` | Shell script to undo security hardening |
@@ -426,7 +406,7 @@ bash ~/.mimac/defaults-rollback.sh
 |---|---|
 | `make setup` fails at Xcode CLT | Run `xcode-select --install`, wait for the GUI install dialog to complete, then re-run |
 | Dotfile conflict ("file exists" warning) | Backup auto-created in `~/.mimac/backups/`; resolve manually then re-run |
-| post-install skips plist imports | SSH key not authenticated; run `make pull-prefs` after adding key to GitHub |
+| post-install skips plist imports | Preferences aren't available locally in `~/.mimac/preferences` |
 | mimac-picker not rendering | Rebuild the binary: `make picker` |
 | `~/bin` not on PATH | Run `make doctor --fix` — automatically adds `~/bin` to PATH in `.zshrc` |
 | Brewfile entry shows missing | Package name may differ from formula name; check with `brew info <pkg>` |

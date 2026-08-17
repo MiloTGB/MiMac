@@ -1,6 +1,6 @@
 MIMAC := $(HOME)/MiMac
 
-.PHONY: status sync snapshot-prefs pull-prefs picker manual help
+.PHONY: status sync snapshot-prefs picker manual help
 
 help: ## Show available make commands
 	@echo ""
@@ -20,11 +20,8 @@ status: ## Show installation status
 sync: ## Sync installed Homebrew packages into the Brewfile  (pass ARGS=-c to commit, ARGS=-n for dry run)
 	@$(MAKE) -C $(MIMAC) sync ARGS="$(ARGS)"
 
-snapshot-prefs: ## Export app preferences and push to mimac-prefs
+snapshot-prefs: ## Export app preferences
 	@$(MAKE) -C $(MIMAC) snapshot-prefs
-
-pull-prefs: ## Clone or pull app preferences from mimac-prefs
-	@$(MAKE) -C $(MIMAC) pull-prefs
 
 picker: ## Build the mimac-picker TUI binary
 	@$(MAKE) -C $(MIMAC) picker

@@ -1,120 +1,616 @@
 #!/usr/bin/env bash
+
+# Re-exec with Homebrew bash if running under bash < 4 (macOS ships bash 3.2)
+if (( BASH_VERSINFO[0] < 4 )); then
+  for _brew_bash in /opt/homebrew/bin/bash /usr/local/bin/bash; do
+    [[ -x "$_brew_bash" ]] && exec "$_brew_bash" "$0" "$@"
+  done
+  echo "error: bash 4+ required (system bash is ${BASH_VERSION}; install via 'brew install bash')" >&2
+  exit 1
+fi
+
 set -euo pipefail
 
-# sync-login-items — compare system login items with what post-install manages
-#
-# Shows which login items are on the system but not in post-install,
-# and which are in post-install but not on the system.
+# mimac sync-login-items — diff system login items against post-install and update repo
 
-SOURCE="${BASH_SOURCE[0]}"
-while [[ -L "$SOURCE" ]]; do
-  DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
-  SOURCE="$(readlink "$SOURCE")"
-  [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
+# Resolve symlinks so this works when called via ~/bin
+_self="${BASH_SOURCE[0]}"
+while [[ -L "$_self" ]]; do
+  _dir="$(cd "$(dirname "$_self")" && pwd)"
+  _self="$(readlink "$_self")"
+  [[ "$_self" != /* ]] && _self="$_dir/$_self"
 done
-SCRIPT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$_self")" && pwd)"
 
 # shellcheck source=lib.sh
 source "$SCRIPT_DIR/lib.sh"
 
 check_macos
 
-POST_INSTALL="$SCRIPT_DIR/post-install"
+DRY_RUN=0
+COMMIT=0
 
-if [[ ! -f "$POST_INSTALL" ]]; then
-  err "post-install script not found: $POST_INSTALL"
+while (("$#")); do
+  case "$1" in
+    --dry-run|-n) DRY_RUN=1 ;;
+    --commit|-c)  COMMIT=1 ;;
+    -h|--help)
+      cat <<'USAGE'
+mimac sync-login-items — diff system login items against post-install and update repo
+
+Usage: scripts/sync-login-items [options]
+  --dry-run, -n   Show what would change without modifying files
+  --commit, -c    Auto-commit changes after updating
+USAGE
+      exit 0
+      ;;
+    *) err "Unknown option: $1"; exit 2 ;;
+  esac
+  shift
+done
+
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+readonly POST_INSTALL="$REPO_ROOT/scripts/post-install"
+readonly MANUAL_MD="$REPO_ROOT/docs/manual.md"
+
+# Temp files
+TEMP_ADD=""
+TEMP_REMOVE=""
+TMP_PI=""
+TMP_MD=""
+TMP_OSA_ERR=""
+cleanup() {
+  for _f in "$TEMP_ADD" "$TEMP_REMOVE" "$TMP_PI" "$TMP_MD" "$TMP_OSA_ERR"; do
+    [[ -n "$_f" && -f "$_f" ]] && rm -f "$_f" || true
+  done
+}
+trap cleanup EXIT INT TERM
+
+# ─── Load persistent ignore list ─────────────────────────────────────────────
+#
+# Format of ~/.mimac/login-items-ignore:
+#   one login-item name per line (the app name, without the .app suffix)
+#   lines starting with # are ignored
+#   example:
+#     NordPass
+#     Chrono Plus
+#
+# The file is created when the user accepts the offer to ignore a declined
+# item (section 5b), and can also be written by hand.
+#
+# This mirrors ~/.mimac/sync-ignore (scripts/sync:86-117) in format, load and
+# match, with one deliberate difference: sync strips *all* whitespace from a
+# rule, which is right for Brewfile tokens but would turn "Chrono Plus" into
+# "ChronoPlus" and never match. Login-item names are app names and contain
+# interior spaces, so only leading and trailing whitespace is stripped here.
+
+_LOGIN_ITEM_IGNORE=()
+if [[ -f "${STATE_DIR}/login-items-ignore" ]]; then
+  while IFS= read -r _line || [[ -n "$_line" ]]; do
+    _line="${_line%%#*}"                           # strip inline comments
+    _line="${_line#"${_line%%[![:space:]]*}"}"     # strip leading whitespace
+    _line="${_line%"${_line##*[![:space:]]}"}"     # strip trailing whitespace
+    [[ -n "$_line" ]] && _LOGIN_ITEM_IGNORE+=("$_line")
+  done < "${STATE_DIR}/login-items-ignore"
+  if (( ${#_LOGIN_ITEM_IGNORE[@]} > 0 )); then
+    log "Loaded ${#_LOGIN_ITEM_IGNORE[@]} ignore rule(s) from ~/.mimac/login-items-ignore"
+  fi
+fi
+
+_login_item_ignored() {
+  local _name="$1"
+  local _item
+  for _item in "${_LOGIN_ITEM_IGNORE[@]}"; do
+    [[ "$_item" == "$_name" ]] && return 0
+  done
+  return 1
+}
+
+# Append one name to the ignore file, and create the file if it is absent.
+# Append-only: existing lines are never rewritten or reordered. The name goes
+# in verbatim, interior spaces intact, because the loader trims only the ends.
+_append_login_item_ignore() {
+  local _name="$1"
+  local _f="${STATE_DIR}/login-items-ignore"
+
+  if [[ ! -f "$_f" ]]; then
+    mkdir -p "$STATE_DIR"
+    cat > "$_f" <<'IGNOREHEADER'
+# mimac login-items ignore list
+#
+# One login-item name per line: the app name, without the .app suffix.
+# A # character starts a comment. Leading and trailing spaces are trimmed,
+# so a name with interior spaces (for example: Chrono Plus) works as written.
+#
+# sync-login-items drops these names, so it never offers them as new items.
+IGNOREHEADER
+  fi
+
+  # A file whose last line has no newline would otherwise absorb the append.
+  # The loader tolerates a missing final newline, so this state is reachable.
+  if [[ -s "$_f" && -n "$(tail -c 1 "$_f")" ]]; then
+    printf '\n' >> "$_f"
+  fi
+
+  printf '%s\n' "$_name" >> "$_f"
+  _LOGIN_ITEM_IGNORE+=("$_name")   # keep the in-memory list authoritative
+}
+
+# ─── 1. Get system login items (name -> path) ────────────────────────────────
+
+log "Reading system login items..."
+
+declare -A system_items=()
+
+# Single System Events query returning "name<TAB>path" pairs, one per line.
+# The old comma-split name list broke on names containing commas, and the
+# per-name path lookup guessed /Applications/$name.app when it failed.
+TMP_OSA_ERR="$(mktemp)"
+osa_rc=0
+raw_items=$(
+  osascript 2>"$TMP_OSA_ERR" <<'OSASCRIPT'
+tell application "System Events"
+  set output to ""
+  repeat with li in login items
+    try
+      set output to output & (name of li) & tab & (path of li) & linefeed
+    end try
+  end repeat
+  return output
+end tell
+OSASCRIPT
+) || osa_rc=$?
+
+# A failed or empty read must never reach the diff. Every tracked item would
+# be absent from an empty system_items, so section 3 would mark all of them
+# stale and offer to delete the whole add_login_item block from post-install.
+# `scripts/sync` aborts on the equivalent brew-list failure; do the same here.
+if (( osa_rc != 0 )); then
+  err "Could not read system login items — osascript exited $osa_rc."
+  [[ -s "$TMP_OSA_ERR" ]] && info "$(head -3 "$TMP_OSA_ERR")"
+  info "System Events may be unavailable, or Automation access may be denied"
+  info "(System Settings → Privacy & Security → Automation)."
   exit 1
 fi
 
-section "Login Items Sync"
-
-# Get system login items via osascript
-log "Fetching system login items..."
-system_items=()
-while IFS= read -r item; do
-  item="${item## }"   # trim leading space
-  item="${item%% }"   # trim trailing space
-  [[ -n "$item" ]] && system_items+=("$item")
-done < <(
-  osascript -e 'tell application "System Events" to get the name of every login item' 2>/dev/null \
-    | tr ',' '\n' \
-    | sed 's/^ *//;s/ *$//' \
-  || echo ""
-)
-
-if (( ${#system_items[@]} == 0 )); then
-  warn "Could not retrieve system login items (Automation permission may be needed)"
-  warn "Grant Terminal access in: System Settings > Privacy > Automation"
+if [[ -z "${raw_items//[[:space:]]/}" ]]; then
+  err "System Events returned no login items."
+  info "'You have zero login items' and 'the read failed' are indistinguishable"
+  info "here, so this aborts rather than offering to delete every tracked item."
+  info "If the list really is empty, edit the add_login_item block in"
+  info "scripts/post-install by hand."
   exit 1
 fi
 
-# Extract managed login items from post-install script
-managed_items=()
+while IFS=$'\t' read -r name app_path; do
+  [[ -n "$name" && -n "$app_path" ]] && system_items["$name"]="$app_path"
+done <<< "$raw_items"
+
+# ─── 2. Parse tracked login items from post-install ──────────────────────────
+
+declare -A tracked_items=()  # name -> path
+
 while IFS= read -r line; do
-  # Match lines like: add_login_item "/Applications/Foo.app"
-  if [[ "$line" =~ add_login_item[[:space:]]+\"(/Applications/([^\"]+)\.app)\" ]]; then
-    managed_items+=("${BASH_REMATCH[2]}")
+  # Regex matches lines of the form: add_login_item "/path/to/App.app"
+  if [[ "$line" =~ ^add_login_item[[:space:]]+\"(/[^\"]+\.app)\" ]]; then
+    app_path="${BASH_REMATCH[1]}"
+    app_name="${app_path##*/}"
+    app_name="${app_name%.app}"
+    tracked_items["$app_name"]="$app_path"
   fi
 done < "$POST_INSTALL"
 
-log "System login items: ${#system_items[@]}"
-log "Managed in post-install: ${#managed_items[@]}"
+# ─── 3. Compute diff ─────────────────────────────────────────────────────────
+
+new_items_arr=()
+stale_items_arr=()
+ignored_arr=()
+conflict_items_arr=()
+
+# The ignore list drops the ADD candidates only. A tracked item that is also
+# ignored still counts as tracked, so the stale set below is untouched: an
+# already-tracked item stays tracked until you delete it.
+for name in "${!system_items[@]}"; do
+  [[ -z "${tracked_items[$name]+x}" ]] || continue
+  if _login_item_ignored "$name"; then
+    ignored_arr+=("$name")
+    continue
+  fi
+  new_items_arr+=("$name")
+done
+
+for name in "${!tracked_items[@]}"; do
+  [[ -z "${system_items[$name]+x}" ]] && stale_items_arr+=("$name")
+done
+
+# A name that is BOTH tracked and ignored is a contradiction: post-install
+# still adds the app at install time, so the ignore rule does nothing for it.
+# Surface it as its own set, because it is not stale — the app IS on the
+# system — and reporting it under "not on system" would be false.
+for name in "${!tracked_items[@]}"; do
+  [[ -n "${system_items[$name]+x}" ]] || continue
+  _login_item_ignored "$name" && conflict_items_arr+=("$name")
+done
+
+# Report the skips by name so it is transparent why an item is not offered.
+# Sorted, because the loop above walks an associative array in hash order.
+if (( ${#ignored_arr[@]} > 0 )); then
+  while IFS= read -r name; do
+    log "Ignoring $name per ~/.mimac/login-items-ignore"
+  done < <(printf '%s\n' "${ignored_arr[@]}" | sort)
+fi
+
+if (( ${#new_items_arr[@]} > 0 )); then
+  mapfile -t new_items_arr < <(printf '%s\n' "${new_items_arr[@]}" | sort)
+fi
+if (( ${#stale_items_arr[@]} > 0 )); then
+  mapfile -t stale_items_arr < <(printf '%s\n' "${stale_items_arr[@]}" | sort)
+fi
+if (( ${#conflict_items_arr[@]} > 0 )); then
+  mapfile -t conflict_items_arr < <(printf '%s\n' "${conflict_items_arr[@]}" | sort)
+fi
+
+if (( ${#new_items_arr[@]} == 0 && ${#stale_items_arr[@]} == 0 \
+      && ${#conflict_items_arr[@]} == 0 )); then
+  log "Login items are up to date. Nothing to do."
+  exit 0
+fi
+
+# ─── 4. Display diff ─────────────────────────────────────────────────────────
+
 echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  Sync Login Items"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# Find items on system but not managed
-unmanaged=()
-for sys_item in "${system_items[@]}"; do
-  found=0
-  for managed in "${managed_items[@]}"; do
-    if [[ "$sys_item" == "$managed" ]]; then
-      found=1
-      break
-    fi
-  done
-  if (( ! found )); then
-    unmanaged+=("$sys_item")
-  fi
-done
+if (( ${#new_items_arr[@]} > 0 )); then
+  echo ""
+  echo "  New (on system, not tracked):"
+  for name in "${new_items_arr[@]}"; do printf "    + %s\n" "$name"; done
+fi
 
-# Find managed items not on system
-missing=()
-for managed in "${managed_items[@]}"; do
-  found=0
-  for sys_item in "${system_items[@]}"; do
-    if [[ "$managed" == "$sys_item" ]]; then
-      found=1
-      break
-    fi
-  done
-  if (( ! found )); then
-    missing+=("$managed")
-  fi
-done
+if (( ${#stale_items_arr[@]} > 0 )); then
+  echo ""
+  echo "  Stale (tracked, not on system):"
+  for name in "${stale_items_arr[@]}"; do printf "    - %s\n" "$name"; done
+fi
 
-# Report
-if (( ${#unmanaged[@]} > 0 )); then
-  warn "On system but NOT in post-install:"
-  for item in "${unmanaged[@]}"; do
-    printf '    %s+ %s%s\n' "$_GRN" "$item" "$_R" >&2
-  done
-  echo "" >&2
-  log "To add these, append to post-install:"
-  for item in "${unmanaged[@]}"; do
-    info "add_login_item \"/Applications/${item}.app\""
-  done
-else
-  ok "All system login items are managed"
+if (( ${#conflict_items_arr[@]} > 0 )); then
+  echo ""
+  echo "  Ignored, but still tracked (post-install keeps adding these):"
+  for name in "${conflict_items_arr[@]}"; do printf "    - %s\n" "$name"; done
 fi
 
 echo ""
 
-if (( ${#missing[@]} > 0 )); then
-  warn "In post-install but NOT on system:"
-  for item in "${missing[@]}"; do
-    printf '    %s- %s%s\n' "$_RED" "$item" "$_R" >&2
-  done
-  echo "" >&2
-  log "These apps may not be installed, or their login items were removed"
+# ─── 5. Selection UI ─────────────────────────────────────────────────────────
+
+declare -A add_items=()
+declare -A remove_items=()
+
+if command -v gum >/dev/null 2>&1; then
+  if (( ${#new_items_arr[@]} > 0 )); then
+    gum_out=$(gum choose --no-limit \
+      --cursor.foreground=212 \
+      --selected.foreground=212 \
+      --header="Select login items to ADD to tracking (space to toggle, enter to confirm):" \
+      "${new_items_arr[@]}" < /dev/tty 2>/dev/tty) || true
+    while IFS= read -r name; do
+      [[ -n "$name" ]] && add_items["$name"]=1
+    done <<< "$gum_out"
+  fi
+  if (( ${#stale_items_arr[@]} > 0 )); then
+    gum_out=$(gum choose --no-limit \
+      --cursor.foreground=196 \
+      --selected.foreground=196 \
+      --header="Select login items to REMOVE from tracking (space to toggle, enter to confirm):" \
+      "${stale_items_arr[@]}" < /dev/tty 2>/dev/tty) || true
+    while IFS= read -r name; do
+      [[ -n "$name" ]] && remove_items["$name"]=1
+    done <<< "$gum_out"
+  fi
+  if (( ${#conflict_items_arr[@]} > 0 )); then
+    gum_out=$(gum choose --no-limit \
+      --cursor.foreground=196 \
+      --selected.foreground=196 \
+      --header="These are in the ignore list but post-install still adds them. Select the items to REMOVE from tracking (space to toggle, enter to confirm):" \
+      "${conflict_items_arr[@]}" < /dev/tty 2>/dev/tty) || true
+    while IFS= read -r name; do
+      [[ -n "$name" ]] && remove_items["$name"]=1
+    done <<< "$gum_out"
+  fi
 else
-  ok "All managed login items are present on system"
+  if (( ${#new_items_arr[@]} > 0 )); then
+    printf "Add all %d new item(s)? [y/N] " "${#new_items_arr[@]}"
+    read -r answer </dev/tty
+    if [[ "$answer" =~ ^[Yy]$ ]]; then
+      for name in "${new_items_arr[@]}"; do add_items["$name"]=1; done
+    fi
+  fi
+  if (( ${#stale_items_arr[@]} > 0 )); then
+    printf "Remove all %d stale item(s)? [y/N] " "${#stale_items_arr[@]}"
+    read -r answer </dev/tty
+    if [[ "$answer" =~ ^[Yy]$ ]]; then
+      for name in "${stale_items_arr[@]}"; do remove_items["$name"]=1; done
+    fi
+  fi
+  if (( ${#conflict_items_arr[@]} > 0 )); then
+    printf "Remove all %d ignored-but-tracked item(s) from tracking? [y/N] " \
+      "${#conflict_items_arr[@]}"
+    read -r answer </dev/tty
+    if [[ "$answer" =~ ^[Yy]$ ]]; then
+      for name in "${conflict_items_arr[@]}"; do remove_items["$name"]=1; done
+    fi
+  fi
+fi
+
+n_add=${#add_items[@]}
+n_remove=${#remove_items[@]}
+
+# ─── 5b. Offer to ignore the declined items ──────────────────────────────────
+#
+# The candidates the user did not select come back every run. Offer to write
+# them to the ignore file, so the file populates itself instead of needing a
+# hand edit. This stage touches ONLY the ignore file: it never adds, deletes
+# or retracks anything in post-install or docs/manual.md.
+#
+# It must run before the "nothing selected" exit below, because declining
+# every candidate is exactly the case this is for.
+
+declined_arr=()
+for name in "${new_items_arr[@]}"; do
+  [[ -z "${add_items[$name]+x}" ]] && declined_arr+=("$name")
+done
+
+if (( ${#declined_arr[@]} > 0 )); then
+  declare -A ignore_selected=()
+
+  if command -v gum >/dev/null 2>&1; then
+    gum_out=$(gum choose --no-limit \
+      --cursor.foreground=214 \
+      --selected.foreground=214 \
+      --header="Select declined items to add to the ignore list, so they stop reappearing (space to toggle, enter to confirm):" \
+      "${declined_arr[@]}" < /dev/tty 2>/dev/tty) || true
+    while IFS= read -r name; do
+      [[ -n "$name" ]] && ignore_selected["$name"]=1
+    done <<< "$gum_out"
+  else
+    printf "Add all %d declined item(s) to ~/.mimac/login-items-ignore? [y/N] " "${#declined_arr[@]}"
+    read -r answer </dev/tty
+    if [[ "$answer" =~ ^[Yy]$ ]]; then
+      for name in "${declined_arr[@]}"; do ignore_selected["$name"]=1; done
+    fi
+  fi
+
+  if (( ${#ignore_selected[@]} > 0 )); then
+    while IFS= read -r name; do
+      # Defensive: a selected name cannot already be in the list, because the
+      # drop stage removed those before the candidates were shown.
+      if _login_item_ignored "$name"; then
+        log "$name is already in ~/.mimac/login-items-ignore"
+        continue
+      fi
+      if (( DRY_RUN )); then
+        dry "Would add $name to ~/.mimac/login-items-ignore"
+        continue
+      fi
+      _append_login_item_ignore "$name"
+      log "Added $name to ~/.mimac/login-items-ignore"
+    done < <(printf '%s\n' "${!ignore_selected[@]}" | sort)
+  fi
+fi
+
+if (( n_add == 0 && n_remove == 0 )); then
+  log "No changes selected. Nothing to do."
+  exit 0
+fi
+
+# ─── 6. Show summary ─────────────────────────────────────────────────────────
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  Sync Login Items — Changes"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+if (( n_add > 0 )); then
+  echo ""
+  echo "  Adding:"
+  while IFS= read -r name; do printf "    + %s\n" "$name"; done \
+    < <(printf '%s\n' "${!add_items[@]}" | sort)
+fi
+if (( n_remove > 0 )); then
+  echo ""
+  echo "  Removing:"
+  while IFS= read -r name; do printf "    - %s\n" "$name"; done \
+    < <(printf '%s\n' "${!remove_items[@]}" | sort)
+fi
+echo ""
+
+if (( DRY_RUN )); then
+  echo "  [dry run] No files modified."
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo ""
+  exit 0
+fi
+
+# ─── 7. Update post-install ──────────────────────────────────────────────────
+
+TEMP_ADD=$(mktemp)
+TEMP_REMOVE=$(mktemp)
+TMP_PI=$(mktemp)
+TMP_MD=$(mktemp)
+
+for name in "${!add_items[@]}"; do
+  printf '%s\t%s\n' "$name" "${system_items[$name]}" >> "$TEMP_ADD"
+done
+
+for name in "${!remove_items[@]}"; do
+  printf '%s\n' "$name" >> "$TEMP_REMOVE"
+done
+
+python3 - "$POST_INSTALL" "$TEMP_ADD" "$TEMP_REMOVE" "$TMP_PI" <<'PYEOF'
+import sys, re
+
+post_install = sys.argv[1]
+add_file     = sys.argv[2]
+remove_file  = sys.argv[3]
+out_path     = sys.argv[4]
+
+to_add    = {}
+to_remove = set()
+
+with open(add_file) as f:
+    for line in f:
+        line = line.strip()
+        if '\t' in line:
+            name, path = line.split('\t', 1)
+            to_add[name] = path
+
+with open(remove_file) as f:
+    for line in f:
+        name = line.strip()
+        if name:
+            to_remove.add(name)
+
+with open(post_install) as f:
+    lines = f.readlines()
+
+# Must stay in step with make_line() below. `((failed++))` returns 1 when failed
+# is 0, which aborts post-install under `set -e`, so the counter is incremented
+# by assignment instead (audit 12 N-1).
+LOGIN_ITEM_RE = re.compile(r'^add_login_item\s+"(/[^"]+\.app)"\s*\|\|\s*failed=\$\(\(\s*failed\s*\+\s*1\s*\)\)')
+
+first_idx = None
+last_idx  = None
+existing  = {}
+
+for i, line in enumerate(lines):
+    m = LOGIN_ITEM_RE.match(line.rstrip())
+    if m:
+        if first_idx is None:
+            first_idx = i
+        last_idx = i
+        path = m.group(1)
+        name = path.rsplit('/', 1)[-1]
+        if name.endswith('.app'):
+            name = name[:-4]
+        existing[name] = path
+
+final = {}
+for name, path in existing.items():
+    if name not in to_remove:
+        final[name] = path
+for name, path in to_add.items():
+    final[name] = path
+
+def sh_dq(path):
+    # Escape bash double-quote metacharacters so a path cannot break out of
+    # (or inject into) the generated add_login_item "..." line.
+    for ch in ('\\', '"', '$', '`'):
+        path = path.replace(ch, '\\' + ch)
+    return path
+
+max_entry_len = max(len(f'add_login_item "{sh_dq(path)}"') for path in final.values()) if final else 0
+col = max_entry_len + 3
+
+def make_line(path):
+    entry = f'add_login_item "{sh_dq(path)}"'
+    padding = col - len(entry)
+    return f'{entry}{" " * padding}|| failed=$(( failed + 1 ))\n'
+
+new_lines = [make_line(final[name]) for name in sorted(final.keys())]
+
+if first_idx is not None:
+    lines[first_idx:last_idx + 1] = new_lines
+    with open(out_path, 'w') as f:
+        f.writelines(lines)
+    print(f'Updated post-install: {len(to_add)} added, {len(to_remove)} removed, {len(final)} total.')
+else:
+    print('Warning: could not locate add_login_item block in post-install.', file=sys.stderr)
+    sys.exit(1)
+PYEOF
+
+# ─── 8. Build final items list for docs ──────────────────────────────────────
+
+declare -A final_items=()
+for name in "${!tracked_items[@]}"; do
+  [[ -z "${remove_items[$name]+x}" ]] && final_items["$name"]=1 || true
+done
+for name in "${!add_items[@]}"; do
+  final_items["$name"]=1
+done
+
+mapfile -t sorted_names < <(printf '%s\n' "${!final_items[@]}" | sort)
+# Join with ", ". `IFS=', '` would join on the first IFS character only, which
+# produced an unreadable "A,B,C" run-on in the manual.
+items_list=$(printf '%s, ' "${sorted_names[@]}")
+items_list="${items_list%, }"
+
+# ─── 9. Update docs ──────────────────────────────────────────────────────────
+
+python3 - "$MANUAL_MD" "$items_list" "$TMP_MD" <<'PYEOF'
+import sys, re
+path, items, out_path = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(path) as f:
+    content = f.read()
+# Must stay in step with the sentence in docs/manual.md. The prefix is the
+# anchor and the list runs to the end of the line. If the manual is reworded,
+# change it here too — the n_subs check below turns any drift into a hard error.
+new_content, n_subs = re.subn(
+    r'(- \*\*Login items:\*\* post-install adds these apps to the login items: )([^\n]+)',
+    lambda m: m.group(1) + items,
+    content
+)
+if n_subs == 0:
+    print('Warning: could not locate login-items line in manual.md.', file=sys.stderr)
+    sys.exit(1)
+with open(out_path, 'w') as f:
+    f.write(new_content)
+PYEOF
+
+# Both outputs succeeded — atomically replace the real files.
+# mktemp creates 0600, so restore the expected modes before the swap
+# (post-install must stay executable for make post-install).
+chmod 755 "$TMP_PI"
+chmod 644 "$TMP_MD"
+mv "$TMP_PI" "$POST_INSTALL"
+mv "$TMP_MD" "$MANUAL_MD"
+
+log "post-install and docs updated."
+
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+
+# ─── 10. Optional commit ─────────────────────────────────────────────────────
+
+if (( COMMIT )); then
+  cd "$REPO_ROOT"
+
+  changed_files=()
+  git diff --quiet "$POST_INSTALL" 2>/dev/null || changed_files+=("scripts/post-install")
+  git diff --quiet "$MANUAL_MD"    2>/dev/null || changed_files+=("docs/manual.md")
+
+  if (( ${#changed_files[@]} == 0 )); then
+    log "No changes to commit."
+  else
+    added_names=()
+    removed_names=()
+    for name in "${!add_items[@]}"; do added_names+=("$name"); done
+    for name in "${!remove_items[@]}"; do removed_names+=("$name"); done
+
+    commit_parts=()
+    if (( ${#added_names[@]} > 0 )); then
+      mapfile -t added_names < <(printf '%s\n' "${added_names[@]}" | sort)
+      commit_parts+=("add $(IFS=', '; echo "${added_names[*]}")")
+    fi
+    if (( ${#removed_names[@]} > 0 )); then
+      mapfile -t removed_names < <(printf '%s\n' "${removed_names[@]}" | sort)
+      commit_parts+=("remove $(IFS=', '; echo "${removed_names[*]}")")
+    fi
+
+    commit_msg="login-items: $(IFS='; '; echo "${commit_parts[*]}")"
+    git add "${changed_files[@]}"
+    git commit -m "$commit_msg"
+    log "Committed: $commit_msg"
+  fi
 fi

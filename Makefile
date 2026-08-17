@@ -3,7 +3,7 @@ REPO_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 SCRIPTS := $(REPO_ROOT)/scripts
 BIN_DIR   := $(REPO_ROOT)/bin
 
-.PHONY: all install fix-exec setup brew post-install tools dotfiles defaults trackpad uninstall nuke update updates harden status doctor dock sync sync-commit sync-prune sync-clean sync-login-items setup-dry nuke-execute picker bf mimac-status build-tools manual help snapshot-prefs pull-prefs
+.PHONY: all install fix-exec setup brew post-install tools dotfiles defaults trackpad uninstall nuke update updates harden status doctor dock sync sync-commit sync-prune sync-clean sync-login-items setup-dry nuke-execute picker bf mimac-status build-tools manual help snapshot-prefs
 
 # Build a Go tool: $(call go-build,<binary>,<tool-dir>)
 define go-build
@@ -27,7 +27,7 @@ all: fix-exec setup brew post-install build-tools ## Full install: setup + brew 
 	@printf '\n'
 	@printf '  Run \033[43;1;30m exec zsh \033[0m to reload your shell.\n'
 	@if [ ! -d "$(HOME)/.mimac/preferences" ]; then \
-		printf '  Preferences not restored — add your SSH key to GitHub and run \033[36mmake pull-prefs\033[0m\n'; \
+		printf '  Preferences not restored — snapshot them with \033[36mmake snapshot-prefs\033[0m\n'; \
 	fi
 	@printf '\n'
 
@@ -105,11 +105,8 @@ sync-clean: ## Remove stale packages and commit
 sync-login-items: ## Sync system login items into post-install
 	@"$(SCRIPTS)/sync-login-items"
 
-snapshot-prefs: ## Export app preferences and push to mimac-prefs
+snapshot-prefs: ## Export app preferences
 	@"$(SCRIPTS)/snapshot-prefs"
-
-pull-prefs: ## Clone or pull app preferences from mimac-prefs
-	@"$(SCRIPTS)/pull-prefs"
 
 build-tools: ## Build all Go TUI binaries (requires Go)
 	@printf '\n\033[1;34m══ Building TUI Tools\033[0m\n\n'
