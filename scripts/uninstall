@@ -80,6 +80,20 @@ if (( removed == 0 && failed == 0 )); then
   fi
 fi
 
+# Remove the LaunchAgents installed by post-install. The symlinks they invoke
+# have just been unlinked above, so leaving the jobs registered would schedule a
+# daily run against a path that no longer exists. Unload as well as delete:
+# launchd keeps a job until it is booted out, regardless of the file.
+LAUNCH_AGENTS=(com.user.clear_app_caches)
+for label in "${LAUNCH_AGENTS[@]}"; do
+  agent="$HOME/Library/LaunchAgents/$label.plist"
+  if [[ -f "$agent" ]]; then
+    launchctl unload "$agent" >/dev/null 2>&1 || true
+    rm -f "$agent"
+    log "Removed LaunchAgent: $label"
+  fi
+done
+
 ROLLBACK="$HOME/.mimac/defaults-rollback.sh"
 if [[ -x "$ROLLBACK" ]]; then
   if [[ -t 0 ]]; then

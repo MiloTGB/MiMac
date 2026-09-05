@@ -118,6 +118,12 @@ Setup is split into phases so you can:
 
 State lives in `~/.mimac`. Rollback scripts are generated automatically for defaults changes.
 
+`syncall` commits and pushes every GitHub repository under `$HOME`, and it stages with
+`git add -A` — so every commit is gated behind a secret scan that refuses private keys,
+credential assignments, bearer tokens and vendor API-key prefixes. A repository that fails
+the scan is left staged and uncommitted; the sweep continues. See the
+[manual](docs/manual.md#syncing-every-repository-syncall).
+
 ## Structure
 
 ```
@@ -129,6 +135,7 @@ MiMac/
 ├── bin/                # Extra scripts linked to ~/bin
 ├── assets/             # App configs, browser policies
 │   ├── browsers/
+│   ├── launchagents/   # Scheduled jobs installed by Phase 3
 │   ├── preferences/
 │   └── topgrade.toml
 ├── tools/

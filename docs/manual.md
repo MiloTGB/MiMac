@@ -93,6 +93,7 @@ Configures installed apps. Must be run after Phase 2.
 - **Plist imports:** Imports personal preference plists; skips any app that already has a preferences file (non-destructive)
 - **App Support restore:** Restores Loopback and SoundSource configuration files (non-destructive)
 - **Login items:** Registers login items for installed apps
+- **LaunchAgents:** Installs and loads the scheduled maintenance jobs (see below)
 
 **Managed app preferences:**
 
@@ -113,6 +114,25 @@ Configures installed apps. Must be run after Phase 2.
 | Keka | ✓ |
 | TimeMachineEditor | ✓ |
 | MacWhisper | ✓ |
+
+**Scheduled maintenance (LaunchAgents):**
+
+Agents are copied from `assets/launchagents/` into `~/Library/LaunchAgents` and loaded
+immediately. Phase 3 unloads before it loads, because launchd keys a job by its `Label`
+rather than by the file — a bare `load` against an already-loaded label fails and silently
+keeps the previous definition, so an edited schedule would not take effect until logout.
+
+| Label | Runs | What it does |
+|---|---|---|
+| `com.user.clear_app_caches` | Daily at 03:00, and at login | Runs `~/bin/clear-app-caches`, clearing the Discord and Google Chrome cache directories |
+
+`make uninstall` unloads and deletes these agents. It has to: the agent invokes a `~/bin`
+symlink that uninstall removes, so leaving the job registered would schedule a daily run
+against a path that no longer exists.
+
+Because `clear-app-caches` runs unattended here, it refuses to do anything when `HOME` is
+unset or is not a directory — without that guard every `rm -rf "$HOME/Library/…"` in it
+would become an absolute path outside the home directory.
 
 ## Full Install
 
@@ -163,6 +183,43 @@ make snapshot-prefs
 3. Saves all changes locally to `~/.mimac/preferences/`
 
 Snapshots are idempotent — if nothing changed, they won't overwrite the file.
+
+## Syncing Every Repository (`syncall`)
+
+`syncall` walks `$HOME` (to `SYNCALL_MAX_DEPTH`, default 7), finds every git repository
+whose remotes include GitHub, auto-commits anything dirty and pushes it.
+
+```bash
+syncall              # Sweep and push
+syncall --dry-run    # Preview: list what would be committed and pushed
+```
+
+**Every commit is gated behind a secret scan.** `syncall` stages with `git add -A`, which
+picks up untracked files as well as modified ones — so without a gate, a key or token
+dropped into any repository under `$HOME` would be committed and pushed to a public remote
+without anyone reading it. The scan runs between the `add` and the `commit`, over the
+staged set, because the staged set is precisely what is about to be published.
+
+The scanner (`scan_for_secrets` in `scripts/lib.sh`) looks for:
+
+| Kind | Examples |
+|---|---|
+| Private key material | `-----BEGIN … PRIVATE KEY-----` |
+| Credential assignments | `api_key`, `secret_key`, `access_token`, `client_secret`, `password`, `passphrase` followed by 12+ characters |
+| Bearer tokens | `Bearer <20+ chars>` |
+| Vendor prefixes (case-sensitive) | `sk-` / `sk-ant-`, `ghp_`, `github_pat_`, `AKIA…`, `xox[baprs]-`, `AIza…` |
+| Plist key/value pairs | A suggestive `<key>` name with a substantial `<string>` value |
+
+Two details worth knowing. Vendor prefixes are matched **case-sensitively** on purpose —
+folded to case-insensitive, `AIza…` matches ordinary base64 in `<data>` blobs and the gate
+becomes noise you learn to dismiss. And binary plists are converted to XML in a temp copy
+before scanning, because `bplist00` files are not greppable and would otherwise report
+clean; the stored file is never modified.
+
+When the scan flags something, `syncall` leaves that repository **staged but uncommitted**
+and moves on to the next one — it does not abort the sweep. Inspect the staged files, then
+either remove the offending file or re-run and confirm at the prompt. With
+`NONINTERACTIVE=1` there is no prompt and the commit is always refused.
 
 ## Updating This Manual (`make manual`)
 
@@ -362,6 +419,22 @@ make picker
 | `make doctor` | Check `~/bin` is on PATH; `--fix` adds it to `.zshrc` |
 | `make fix-exec` | Make all scripts and bin files executable |
 | `make help` | Show all available commands |
+
+## Standalone Commands (`~/bin`)
+
+Symlinked into `~/bin` by `make setup`. These have no Make target — run them directly.
+
+| Command | Purpose |
+|---|---|
+| `syncall` | Commit and push every GitHub repository under `$HOME`. Every commit is gated behind the secret scan — see [Syncing Every Repository](#syncing-every-repository-syncall). `--dry-run` previews |
+| `clear-app-caches` | Clears the Discord and Google Chrome cache directories. Also runs unattended from a LaunchAgent daily at 03:00 |
+| `check-updates` | Report available Homebrew and macOS updates |
+| `hide_tm.sh` | Hides Time Machine volumes from the Finder sidebar. Volume names as arguments, or set `TM_VOLUMES` |
+| `audio-mode` / `zoom-mode` | Switch the audio device configuration for production or calls |
+| `bf` | Brewfile helper |
+
+> `scripts/lib.sh` and `bin/lib/common.sh` are sourced libraries, not commands. They are
+> tracked non-executable, and `fix-exec` skips `lib.sh` so the bit is not re-added.
 
 ---
 

@@ -443,6 +443,47 @@ add_login_item "/Applications/SoundSource.app"      || failed=$(( failed + 1 ))
 add_login_item "/Applications/Loopback.app"         || failed=$(( failed + 1 ))
 
 ###############################################################################
+# LaunchAgents                                                                #
+###############################################################################
+
+install_launch_agent(){
+  local plist_name="$1"
+  local src_plist="$REPO_ROOT/assets/launchagents/$plist_name"
+  local dest_dir="$HOME/Library/LaunchAgents"
+  local dest_plist="$dest_dir/$plist_name"
+
+  if [[ ! -f "$src_plist" ]]; then
+    return 0
+  fi
+
+  mkdir -p "$dest_dir"
+
+  if [[ -f "$dest_plist" ]] && cmp -s "$src_plist" "$dest_plist"; then
+    logskip "LaunchAgent $plist_name" "already installed"
+    return 0
+  fi
+
+  cp "$src_plist" "$dest_plist"
+
+  # Unload before loading. launchd keys a job by its Label, not by the file, so
+  # `launchctl load` on a label that is already loaded fails with "Load failed:
+  # 5: Input/output error" and leaves the OLD definition running. Because the
+  # cmp above returns early when the file is unchanged, the only time this line
+  # is reached is when the plist changed — exactly the case the bare load could
+  # not apply. An edited schedule silently kept the previous one until the next
+  # logout. The unload is expected to fail on a first install, hence || true.
+  launchctl unload "$dest_plist" >/dev/null 2>&1 || true
+  launchctl load "$dest_plist" >/dev/null 2>&1 || true
+
+  ok "Installed LaunchAgent → $plist_name"
+}
+
+# Clears the Discord and Chrome caches daily at 03:00. The agent invokes
+# ~/bin/clear-app-caches, which `make setup` symlinks into place — install the
+# agent after that link exists, or the first run finds nothing to execute.
+install_launch_agent "com.user.clear_app_caches.plist" || failed=$(( failed + 1 ))
+
+###############################################################################
 # Summary                                                                     #
 ###############################################################################
 

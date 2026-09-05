@@ -1,13 +1,36 @@
 #!/bin/bash
 
+# clear-app-caches — remove cache directories for the apps on this machine.
+#
+# Runs unattended from a LaunchAgent, so it sets -u: an unset or empty HOME
+# would turn every path below into an absolute one outside the home directory.
+# -e is deliberately NOT set — these are best-effort removals, and one cache
+# that will not delete should not stop the rest from being cleared.
+set -uo pipefail
+
+if [[ -z "${HOME:-}" || ! -d "$HOME" ]]; then
+  echo "error: HOME is unset or not a directory — refusing to remove anything" >&2
+  exit 1
+fi
+
 # Discord
 rm -rf "$HOME/Library/Application Support/discord/Cache"
 rm -rf "$HOME/Library/Application Support/discord/Code Cache"
 rm -rf "$HOME/Library/Caches/com.hnc.Discord"
 
 # Google Chrome
-rm -rf "$HOME/Library/Caches/Google/Chrome/Default/Cache"
-rm -rf "$HOME/Library/Caches/Google/Chrome/Default/Code Cache"
-rm -rf "$HOME/Library/Caches/Google/Chrome/Default/Media Cache"
+#
+# Chrome names its profile directories from the order they were created, so this
+# machine has "Profile 4", "Profile 7", "Profile 11" and "Profile 14" and no
+# "Default" at all. Hardcoding "Default" cleared nothing. Iterate instead, and
+# remove only the known cache subdirectories — never the profile directory,
+# which also holds non-cache state.
+shopt -s nullglob
+for profile in "$HOME/Library/Caches/Google/Chrome"/*/; do
+  for sub in "Cache" "Code Cache" "Media Cache" "image_cache"; do
+    rm -rf "${profile}${sub}"
+  done
+done
+shopt -u nullglob
 
 echo "Cleared caches for Discord and Google Chrome."

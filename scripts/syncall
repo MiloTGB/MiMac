@@ -73,6 +73,22 @@ auto_commit() {
   local msg
   msg="syncall: auto-commit $(date +%Y-%m-%dT%H:%M:%S)"
   git -C "$dir" add -A
+
+  # Gate the commit on the secret scan. `add -A` above stages untracked files as
+  # well as modified ones, so a key or token dropped into this repo would
+  # otherwise be committed and pushed without anyone reading it. Scan the staged
+  # set rather than the worktree: that is exactly what is about to be published.
+  local -a staged_abs=()
+  local f
+  while IFS= read -r f; do
+    [[ -n "$f" ]] && staged_abs+=("$dir/$f")
+  done < <(git -C "$dir" diff --cached --name-only --diff-filter=ACMR 2>/dev/null)
+
+  if (( ${#staged_abs[@]} > 0 )) && ! require_clean_secrets "${staged_abs[@]}"; then
+    err "secret scan not cleared — leaving $dir staged and uncommitted"
+    return 1
+  fi
+
   # If nothing to commit, this exits non-zero; that's fine.
   git -C "$dir" commit -m "$msg" >/dev/null 2>&1 || true
 }
@@ -174,7 +190,13 @@ main() {
           read -r ans
           [[ ! "$ans" =~ ^[Yy]$ ]] && { warn "Skipped: $r"; continue; }
         fi
-        auto_commit "$r"
+        # Must not go unwrapped: auto_commit returns non-zero when the secret
+        # scan is not cleared, and `set -e` would abort the whole sweep rather
+        # than skipping this one repo.
+        if ! auto_commit "$r"; then
+          warn "Skipped (secret scan): $r"
+          continue
+        fi
       fi
     fi
 

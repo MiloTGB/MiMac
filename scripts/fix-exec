@@ -15,8 +15,13 @@ TARGETS=(
 echo "[fix-exec] Ensuring executable bits on MiMac scripts..."
 for dir in "${TARGETS[@]}"; do
   if [ -d "$dir" ]; then
-    # Only chmod top-level files in each target dir
-    find "$dir" -maxdepth 1 -type f -print0 2>/dev/null \
+    # Only chmod top-level files in each target dir.
+    #
+    # lib.sh is excluded deliberately: it is a sourced library whose own header
+    # reads "Source this file; do not execute directly", and it carries no main
+    # body to run. Without this exclusion the -maxdepth 1 sweep re-added the
+    # executable bit on every run, so correcting the mode in git never held.
+    find "$dir" -maxdepth 1 -type f ! -name 'lib.sh' -print0 2>/dev/null \
       | xargs -0 chmod +x 2>/dev/null || true
     echo "[fix-exec] Fixed executables in: $dir"
   else
