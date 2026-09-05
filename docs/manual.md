@@ -126,9 +126,11 @@ keeps the previous definition, so an edited schedule would not take effect until
 |---|---|---|
 | `com.user.clear_app_caches` | Daily at 03:00, and at login | Runs `~/bin/clear-app-caches`, clearing the Discord and Google Chrome cache directories |
 
-`make uninstall` unloads and deletes these agents. It has to: the agent invokes a `~/bin`
-symlink that uninstall removes, so leaving the job registered would schedule a daily run
-against a path that no longer exists.
+`make uninstall` unloads and deletes these agents, and `nuke-mimac` unloads and trashes
+them. Both have to: the agent invokes a `~/bin` symlink that each of them removes, so
+leaving the job registered would schedule a daily run against a path that no longer exists.
+`nuke-mimac` handles them before it touches `~/bin`, and also runs
+`~/.mimac/services-rollback.sh` if `trim-services` has written one.
 
 Because `clear-app-caches` runs unattended here, it refuses to do anything when `HOME` is
 unset or is not a directory — without that guard every `rm -rf "$HOME/Library/…"` in it
@@ -220,6 +222,37 @@ When the scan flags something, `syncall` leaves that repository **staged but unc
 and moves on to the next one — it does not abort the sweep. Inspect the staged files, then
 either remove the offending file or re-run and confirm at the prompt. With
 `NONINTERACTIVE=1` there is no prompt and the commit is always refused.
+
+## Trimming Background Services (`make trim-services`)
+
+Opt-in, and deliberately **not** part of `make all`. Turning a service off is a decision
+about what this machine is for, and each one costs something different.
+
+```bash
+make trim-services ARGS=-n   # Preview — change nothing
+make trim-services           # Apply
+bash ~/.mimac/services-rollback.sh   # Undo everything
+```
+
+These are launchd jobs, not `defaults` keys, so they do not belong in `defaults.sh`. The
+tool for turning one off permanently is `launchctl disable`, which writes to launchd's
+override database rather than to the job's plist — and that is what makes the Apple ones
+possible at all: their plists live under `/System/Library/LaunchAgents` where SIP forbids
+edits, but the override database is writable and survives a reboot.
+
+| Service | What it is | Cost of disabling |
+|---|---|---|
+| `com.google.GoogleUpdater.wake` | Google Chrome updater | Wakes hourly. The Brewfile carries `google-chrome` as greedy, so brew already upgrades Chrome. **Chrome reinstalls this agent when it next launches** — re-run after a Chrome update |
+| `com.apple.photoanalysisd` | Photos face and scene analysis | Ends People albums, Memories and Visual Look Up. The heaviest item here, and the only one with a real feature cost |
+| `com.apple.mediaanalysisd` | Media analysis (Visual Look Up) | Same family as `photoanalysisd` |
+
+Every disable is appended to `~/.mimac/services-rollback.sh`, in the same shape as the
+defaults and hardening rollbacks.
+
+One honest limitation in the output: SIP refuses `launchctl bootout` on a running Apple
+agent, so for those the override lands but the process keeps running until the next login.
+The script says *"disabled — takes effect at next login"* in that case rather than claiming
+it stopped something it did not.
 
 ## Updating This Manual (`make manual`)
 
@@ -412,6 +445,7 @@ make picker
 | `make defaults` | Apply macOS defaults only |
 | `make trackpad` | Apply macOS defaults including trackpad settings |
 | `make harden` | Apply macOS security hardening |
+| `make trim-services` | Disable background launchd agents this Mac does not need (`ARGS=-n` to preview) |
 | `make update` | Upgrade all packages (topgrade or brew upgrade) |
 | `make updates` | Run macOS software updates (`softwareupdate -ia`) |
 | `make uninstall` | Remove symlinks and undo setup |

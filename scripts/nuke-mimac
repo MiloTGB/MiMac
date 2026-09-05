@@ -226,11 +226,36 @@ fi
 if [[ -x "$HOME/.mimac/hardening-rollback.sh" ]]; then
   rollback_scripts+=("$HOME/.mimac/hardening-rollback.sh")
 fi
+if [[ -x "$HOME/.mimac/services-rollback.sh" ]]; then
+  rollback_scripts+=("$HOME/.mimac/services-rollback.sh")
+fi
 
 if (( ${#rollback_scripts[@]} > 0 )); then
   operations_summary+="✓ Execute ${#rollback_scripts[@]} rollback script(s)"$'\n'
 else
   operations_summary+="• No rollback scripts found"$'\n'
+fi
+
+# ─── 4b. Identify LaunchAgents ──────────────────────────────────────────────
+#
+# post-install copies these into ~/Library/LaunchAgents, which is outside the
+# repository and outside ~/.mimac — so nothing else in this script would reach
+# them. Each one invokes a ~/bin symlink that section 9 is about to trash, and
+# launchd keeps a job registered until it is booted out regardless of whether
+# the file or its target still exists. Left behind, they would fire on every
+# login against a dead path.
+
+LAUNCH_AGENTS=(com.user.clear_app_caches)
+launch_agents_to_remove=()
+for label in "${LAUNCH_AGENTS[@]}"; do
+  agent="$HOME/Library/LaunchAgents/$label.plist"
+  [[ -f "$agent" ]] && launch_agents_to_remove+=("$agent")
+done
+
+if (( ${#launch_agents_to_remove[@]} > 0 )); then
+  operations_summary+="✓ Unload and trash ${#launch_agents_to_remove[@]} LaunchAgent(s)"$'\n'
+else
+  operations_summary+="• No MiMac LaunchAgents installed"$'\n'
 fi
 
 # ─── 5. Repository cleanup (will prompt) ─────────────────────────────────────
@@ -295,6 +320,7 @@ echo ""
 # First confirmation: basic cleanup
 if (( ${#dotfiles_to_remove[@]} > 0 )) || \
    (( ${#tools_to_remove[@]} > 0 )) || \
+   (( ${#launch_agents_to_remove[@]} > 0 )) || \
    (( ${#rollback_scripts[@]} > 0 )); then
 
   printf '%s  ▸%s Remove MiMac dotfiles, tools, and restore preferences? [y/N]: ' "$_CYN" "$_R"
@@ -379,6 +405,22 @@ if (( do_basic_cleanup )) && (( ${#dotfiles_to_remove[@]} > 0 )); then
     fi
   done
   log "Trashed ${#dotfiles_to_remove[@]} dotfile(s)"
+fi
+
+# Remove LaunchAgents — before the tool symlinks below, since these jobs invoke
+# them. Unload as well as trash: launchd keeps a job until it is booted out,
+# regardless of the file.
+if (( do_basic_cleanup )) && (( ${#launch_agents_to_remove[@]} > 0 )); then
+  log "Unloading and trashing LaunchAgents..."
+  for agent in "${launch_agents_to_remove[@]}"; do
+    launchctl unload "$agent" >/dev/null 2>&1 || true
+    if to_trash "$agent"; then
+      verbose "Trashed: $agent"
+    else
+      warn "Failed to trash: $agent"
+    fi
+  done
+  log "Trashed ${#launch_agents_to_remove[@]} LaunchAgent(s)"
 fi
 
 # Remove tool symlinks

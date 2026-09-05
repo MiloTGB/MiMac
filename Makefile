@@ -3,7 +3,7 @@ REPO_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 SCRIPTS := $(REPO_ROOT)/scripts
 BIN_DIR   := $(REPO_ROOT)/bin
 
-.PHONY: all install fix-exec setup brew post-install tools dotfiles defaults trackpad uninstall nuke update updates harden status doctor dock sync sync-commit sync-prune sync-clean sync-login-items setup-dry nuke-execute picker bf mimac-status build-tools manual help snapshot-prefs
+.PHONY: trim-services all install fix-exec setup brew post-install tools dotfiles defaults trackpad uninstall nuke update updates harden status doctor dock sync sync-commit sync-prune sync-clean sync-login-items setup-dry nuke-execute picker bf mimac-status build-tools manual help snapshot-prefs
 
 # Build a Go tool: $(call go-build,<binary>,<tool-dir>)
 define go-build
@@ -33,8 +33,12 @@ all: fix-exec setup brew post-install build-tools ## Full install: setup + brew 
 
 fix-exec: ## Make scripts and bin files executable
 	@echo "Making scripts and bin executables..."
-	@find $(SCRIPTS) -type f -maxdepth 1 -not -name "*.md" -exec chmod +x {} + 2>/dev/null || true
-	@find $(BIN_DIR) -type f -maxdepth 1 -not -name "*.md" -exec chmod +x {} + 2>/dev/null || true
+	@# lib.sh is excluded deliberately — it is a sourced library, not a command,
+	@# and its own header says so. This must stay in step with scripts/fix-exec,
+	@# which carries the same exclusion: setup, brew and post-install all depend
+	@# on this target, so without it the executable bit comes back on every run.
+	@find $(SCRIPTS) -type f -maxdepth 1 -not -name "*.md" -not -name "lib.sh" -exec chmod +x {} + 2>/dev/null || true
+	@find $(BIN_DIR) -type f -maxdepth 1 -not -name "*.md" -not -name "lib.sh" -exec chmod +x {} + 2>/dev/null || true
 
 install: setup ## Run Phase 1 setup
 
@@ -79,6 +83,9 @@ updates: ## Run macOS software updates
 
 harden: ## Apply macOS security hardening
 	@"$(SCRIPTS)/hardening.sh"
+
+trim-services: ## Disable background launchd agents this Mac does not need (ARGS=-n to preview)
+	@"$(SCRIPTS)/trim-services" $(ARGS)
 
 status: ## Show installation status
 	@"$(SCRIPTS)/status"

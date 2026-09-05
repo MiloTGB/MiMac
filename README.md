@@ -41,6 +41,7 @@ Run `make all` to execute all three phases at once. Phases are independent — r
 | `make trackpad` | Apply defaults including trackpad gestures |
 | `make dock` | Set up Dock with preferred apps |
 | `make harden` | Security hardening (Touch ID sudo, firewall) |
+| `make trim-services` | Disable background launchd agents this Mac does not need (`ARGS=-n` to preview) |
 | `make status` | Show installation status |
 | `make doctor` | Check `~/bin` is on PATH; `make doctor --fix` adds it to `.zshrc` |
 | `make update` | Update via topgrade (or brew) |
