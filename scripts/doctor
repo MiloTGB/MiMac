@@ -364,7 +364,7 @@ section "MiMac tools"
 # that import the shared theme go stale when it changes).
 if command -v go >/dev/null 2>&1; then
   stale=()
-  for pair in bf:bf mimac-picker:picker mimac-status:mimac-status; do
+  for pair in mimac-picker:picker mimac-status:mimac-status; do
     bin_name="${pair%%:*}"; src="$REPO_ROOT/tools/${pair#*:}"
     bin="$REPO_ROOT/bin/$bin_name"
     [[ -d "$src" ]] || continue

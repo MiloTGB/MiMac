@@ -52,7 +52,6 @@ assets/browsers/*-extensions.txt
 # Built binaries
 tools/picker/mimac-picker
 bin/mimac-picker
-bin/bf
 bin/mimac-status
 
 # Homebrew

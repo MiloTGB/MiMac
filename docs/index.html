@@ -402,8 +402,6 @@ setup</p>
 Current (<code>make sync</code>)</a></li>
 <li><a href="#keeping-app-preferences-current-make-snapshot-prefs" id="toc-keeping-app-preferences-current-make-snapshot-prefs">Keeping App
 Preferences Current (<code>make snapshot-prefs</code>)</a></li>
-<li><a href="#syncing-every-repository-syncall" id="toc-syncing-every-repository-syncall">Syncing Every Repository
-(<code>syncall</code>)</a></li>
 <li><a href="#trimming-background-services-make-trim-services" id="toc-trimming-background-services-make-trim-services">Trimming
 Background Services (<code>make trim-services</code>)</a></li>
 <li><a href="#security-hardening-make-harden" id="toc-security-hardening-make-harden">Security Hardening
@@ -529,12 +527,6 @@ safe items</td>
 <td>Any time</td>
 <td>Health dashboard TUI; <code>make status</code> prints the plain-text
 version</td>
-</tr>
-<tr>
-<td><code>syncall</code></td>
-<td>End of day</td>
-<td>Commit and push every GitHub repo under <code>$HOME</code>, behind a
-secret scan</td>
 </tr>
 </tbody>
 </table>
@@ -743,85 +735,14 @@ SoundSource, Audio Hijack) using <code>defaults export</code></li>
 <li>Saves everything to <code>~/.mimac/preferences/</code>, where Phase
 3 imports it from</li>
 </ol>
-<h2 id="syncing-every-repository-syncall">Syncing Every Repository
-(<code>syncall</code>)</h2>
-<p><code>syncall</code> walks <code>$HOME</code> (to
-<code>SYNCALL_MAX_DEPTH</code>, default 7), finds every git repository
-whose remotes include GitHub, auto-commits anything dirty and pushes
-it.</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="ex">syncall</span>              <span class="co"># Sweep and push</span></span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="ex">syncall</span> <span class="at">--dry-run</span>    <span class="co"># Preview: list what would be committed and pushed</span></span></code></pre></div>
-<p><strong>Every commit is gated behind a secret scan.</strong>
-<code>syncall</code> stages with <code>git add -A</code>, which picks up
-untracked files as well as modified ones — so without a gate, a key or
-token dropped into any repository under <code>$HOME</code> would be
-committed and pushed to a public remote without anyone reading it. The
-scan runs between the <code>add</code> and the <code>commit</code>, over
-the staged set, because the staged set is precisely what is about to be
-published.</p>
-<p>The scanner (<code>scan_for_secrets</code> in
-<code>scripts/lib.sh</code>) looks for:</p>
-<table>
-<colgroup>
-<col style="width: 50%" />
-<col style="width: 50%" />
-</colgroup>
-<thead>
-<tr>
-<th>Kind</th>
-<th>Examples</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Private key material</td>
-<td><code>-----BEGIN … PRIVATE KEY-----</code></td>
-</tr>
-<tr>
-<td>Credential assignments</td>
-<td><code>api_key</code>, <code>secret_key</code>,
-<code>access_token</code>, <code>client_secret</code>,
-<code>password</code>, <code>passphrase</code> followed by 12+
-characters</td>
-</tr>
-<tr>
-<td>Bearer tokens</td>
-<td><code>Bearer &lt;20+ chars&gt;</code></td>
-</tr>
-<tr>
-<td>Vendor prefixes (case-sensitive)</td>
-<td><code>sk-</code> / <code>sk-ant-</code>, <code>ghp_</code>,
-<code>github_pat_</code>, <code>AKIA…</code>, <code>xox[baprs]-</code>,
-<code>AIza…</code></td>
-</tr>
-<tr>
-<td>Plist key/value pairs</td>
-<td>A suggestive <code>&lt;key&gt;</code> name with a substantial
-<code>&lt;string&gt;</code> value</td>
-</tr>
-</tbody>
-</table>
-<p>Two details worth knowing. Vendor prefixes are matched
-<strong>case-sensitively</strong> on purpose — folded to
-case-insensitive, <code>AIza…</code> matches ordinary base64 in
-<code>&lt;data&gt;</code> blobs and the gate becomes noise you learn to
-dismiss. And binary plists are converted to XML in a temp copy before
-scanning, because <code>bplist00</code> files are not greppable and
-would otherwise report clean; the stored file is never modified.</p>
-<p>When the scan flags something, <code>syncall</code> leaves that
-repository <strong>staged but uncommitted</strong> and moves on to the
-next one — it does not abort the sweep. Inspect the staged files, then
-either remove the offending file or re-run and confirm at the prompt.
-With <code>NONINTERACTIVE=1</code> there is no prompt and the commit is
-always refused.</p>
 <h2 id="trimming-background-services-make-trim-services">Trimming
 Background Services (<code>make trim-services</code>)</h2>
 <p>Opt-in, and deliberately <strong>not</strong> part of
 <code>make all</code>. Turning a service off is a decision about what
 this machine is for, and each one costs something different.</p>
-<div class="sourceCode" id="cb8"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> trim-services ARGS=-n   <span class="co"># Preview — change nothing</span></span>
-<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> trim-services           <span class="co"># Apply</span></span>
-<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="fu">bash</span> ~/.mimac/services-rollback.sh   <span class="co"># Undo everything</span></span></code></pre></div>
+<div class="sourceCode" id="cb7"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> trim-services ARGS=-n   <span class="co"># Preview — change nothing</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> trim-services           <span class="co"># Apply</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="fu">bash</span> ~/.mimac/services-rollback.sh   <span class="co"># Undo everything</span></span></code></pre></div>
 <p>These are launchd jobs, not <code>defaults</code> keys, so they do
 not belong in <code>defaults.sh</code>. The tool for turning one off
 permanently is <code>launchctl disable</code>, which writes to launchd’s
@@ -911,17 +832,17 @@ longer read by macOS</td>
 (<code>make manual</code>)</h2>
 <p>The manual source lives in the repo at <code>docs/manual.md</code>.
 After editing it, regenerate the HTML and commit:</p>
-<div class="sourceCode" id="cb9"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Edit the source</span></span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="va">$EDITOR</span> ~/MiMac/docs/manual.md</span>
-<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Regenerate the site HTML (requires pandoc)</span></span>
-<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> manual</span>
-<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a><span class="co"># Commit and push both files</span></span>
-<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> ~/MiMac</span>
-<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> add docs/manual.md docs/index.html</span>
-<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> commit <span class="at">-m</span> <span class="st">&quot;docs: update manual&quot;</span></span>
-<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> push</span></code></pre></div>
+<div class="sourceCode" id="cb8"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Edit the source</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="va">$EDITOR</span> ~/MiMac/docs/manual.md</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Regenerate the site HTML (requires pandoc)</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> manual</span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a><span class="co"># Commit and push both files</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> ~/MiMac</span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> add docs/manual.md docs/index.html</span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> commit <span class="at">-m</span> <span class="st">&quot;docs: update manual&quot;</span></span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> push</span></code></pre></div>
 <blockquote>
 <p><strong>Note:</strong> Only edit <code>docs/manual.md</code> — never
 edit <code>docs/index.html</code> directly, as it is overwritten by
@@ -1077,14 +998,14 @@ path outside the home directory.</p>
 <h1 id="setting-up-or-rebuilding-a-mac">Setting Up or Rebuilding a
 Mac</h1>
 <p>Needs macOS 15 or later and an internet connection.</p>
-<div class="sourceCode" id="cb11"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone https://github.com/MiloTGB/MiMac.git ~/MiMac</span>
-<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> ~/MiMac</span>
-<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> install        <span class="co"># Phase 1 — then open a new terminal (or exec zsh)</span></span>
-<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> brew           <span class="co"># Phase 2 — the long one</span></span>
-<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> post-install   <span class="co"># Phase 3</span></span>
-<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> build-tools    <span class="co"># mimac-picker (needed by make sync), bf, mimac-status</span></span>
-<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> dock</span>
-<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> doctor         <span class="co"># Confirm everything landed; ARGS=--fix for the safe repairs</span></span></code></pre></div>
+<div class="sourceCode" id="cb10"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone https://github.com/MiloTGB/MiMac.git ~/MiMac</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> ~/MiMac</span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> install        <span class="co"># Phase 1 — then open a new terminal (or exec zsh)</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> brew           <span class="co"># Phase 2 — the long one</span></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> post-install   <span class="co"># Phase 3</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> build-tools    <span class="co"># mimac-picker (needed by make sync), mimac-status</span></span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> dock</span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> doctor         <span class="co"># Confirm everything landed; ARGS=--fix for the safe repairs</span></span></code></pre></div>
 <p><code>make all</code> runs Phases 1–3 and <code>build-tools</code> in
 one go. Phase 3 switches the repo’s remote from HTTPS to SSH once
 <code>ssh -T git@github.com</code> succeeds.</p>
@@ -1275,12 +1196,6 @@ preview)</td>
 <td>Same as <code>make updates</code></td>
 </tr>
 <tr>
-<td><code>syncall</code></td>
-<td>Commit and push every GitHub repository under <code>$HOME</code>,
-behind the secret scan — see <a href="#syncing-every-repository-syncall">Syncing Every Repository</a>.
-<code>--dry-run</code> previews</td>
-</tr>
-<tr>
 <td><code>check-updates</code></td>
 <td>Weekly “MiMac has new commits” prompt; runs from
 <code>.zshrc</code></td>
@@ -1298,15 +1213,6 @@ daily at 03:00</td>
 <td><code>hide_tm.sh</code></td>
 <td>Hides Time Machine volumes from the Finder sidebar. Volume names as
 arguments, or set <code>TM_VOLUMES</code></td>
-</tr>
-<tr>
-<td><code>audio-mode</code> / <code>zoom-mode</code></td>
-<td>Pause sync clients and distractions for recording sessions or
-calls</td>
-</tr>
-<tr>
-<td><code>bf</code></td>
-<td>Brewfile manager TUI</td>
 </tr>
 </tbody>
 </table>
@@ -1384,7 +1290,7 @@ installed or missing</li>
 </table>
 <p>Each rollback script records the state <em>before</em> MiMac’s first
 change, and re-runs never overwrite it. To undo macOS defaults:</p>
-<div class="sourceCode" id="cb12"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">bash</span> ~/.mimac/defaults-rollback.sh</span></code></pre></div>
+<div class="sourceCode" id="cb11"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">bash</span> ~/.mimac/defaults-rollback.sh</span></code></pre></div>
 <hr />
 <h1 id="troubleshooting">Troubleshooting</h1>
 <table>

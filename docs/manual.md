@@ -35,7 +35,6 @@ repair what it set up.
 | `make updates` | Any time | macOS updates for this version only — never a major upgrade |
 | `make sync` | After installing or removing apps | Record new Homebrew packages in the Brewfile |
 | `status` | Any time | Health dashboard TUI; `make status` prints the plain-text version |
-| `syncall` | End of day | Commit and push every GitHub repo under `$HOME`, behind a secret scan |
 
 Every one of these works from `~/` as well — `~/Makefile` forwards them to the repo.
 
@@ -172,43 +171,6 @@ make snapshot-prefs
 1. Exports the preference plist for each managed app (iTerm2, Loopback, SoundSource, Audio Hijack) using `defaults export`
 2. Copies Loopback and SoundSource Application Support files
 3. Saves everything to `~/.mimac/preferences/`, where Phase 3 imports it from
-
-## Syncing Every Repository (`syncall`)
-
-`syncall` walks `$HOME` (to `SYNCALL_MAX_DEPTH`, default 7), finds every git repository
-whose remotes include GitHub, auto-commits anything dirty and pushes it.
-
-```bash
-syncall              # Sweep and push
-syncall --dry-run    # Preview: list what would be committed and pushed
-```
-
-**Every commit is gated behind a secret scan.** `syncall` stages with `git add -A`, which
-picks up untracked files as well as modified ones — so without a gate, a key or token
-dropped into any repository under `$HOME` would be committed and pushed to a public remote
-without anyone reading it. The scan runs between the `add` and the `commit`, over the
-staged set, because the staged set is precisely what is about to be published.
-
-The scanner (`scan_for_secrets` in `scripts/lib.sh`) looks for:
-
-| Kind | Examples |
-|---|---|
-| Private key material | `-----BEGIN … PRIVATE KEY-----` |
-| Credential assignments | `api_key`, `secret_key`, `access_token`, `client_secret`, `password`, `passphrase` followed by 12+ characters |
-| Bearer tokens | `Bearer <20+ chars>` |
-| Vendor prefixes (case-sensitive) | `sk-` / `sk-ant-`, `ghp_`, `github_pat_`, `AKIA…`, `xox[baprs]-`, `AIza…` |
-| Plist key/value pairs | A suggestive `<key>` name with a substantial `<string>` value |
-
-Two details worth knowing. Vendor prefixes are matched **case-sensitively** on purpose —
-folded to case-insensitive, `AIza…` matches ordinary base64 in `<data>` blobs and the gate
-becomes noise you learn to dismiss. And binary plists are converted to XML in a temp copy
-before scanning, because `bplist00` files are not greppable and would otherwise report
-clean; the stored file is never modified.
-
-When the scan flags something, `syncall` leaves that repository **staged but uncommitted**
-and moves on to the next one — it does not abort the sweep. Inspect the staged files, then
-either remove the offending file or re-run and confirm at the prompt. With
-`NONINTERACTIVE=1` there is no prompt and the commit is always refused.
 
 ## Trimming Background Services (`make trim-services`)
 
@@ -371,7 +333,7 @@ cd ~/MiMac
 make install        # Phase 1 — then open a new terminal (or exec zsh)
 make brew           # Phase 2 — the long one
 make post-install   # Phase 3
-make build-tools    # mimac-picker (needed by make sync), bf, mimac-status
+make build-tools    # mimac-picker (needed by make sync), mimac-status
 make dock
 make doctor         # Confirm everything landed; ARGS=--fix for the safe repairs
 ```
@@ -443,13 +405,10 @@ Symlinked into `~/bin` by Phase 1.
 | `status` | Health dashboard TUI (`mimac-status`) |
 | `doctor` | Same as `make doctor` |
 | `macos-updates` | Same as `make updates` |
-| `syncall` | Commit and push every GitHub repository under `$HOME`, behind the secret scan — see [Syncing Every Repository](#syncing-every-repository-syncall). `--dry-run` previews |
 | `check-updates` | Weekly "MiMac has new commits" prompt; runs from `.zshrc` |
 | `clear-app-caches` | Clears the Discord cache directories. Also runs from a LaunchAgent daily at 03:00 |
 | `trim-services` | Same as `make trim-services` |
 | `hide_tm.sh` | Hides Time Machine volumes from the Finder sidebar. Volume names as arguments, or set `TM_VOLUMES` |
-| `audio-mode` / `zoom-mode` | Pause sync clients and distractions for recording sessions or calls |
-| `bf` | Brewfile manager TUI |
 
 > `scripts/lib.sh` and `bin/lib/common.sh` are sourced libraries, not commands. They are
 > tracked non-executable, and `fix-exec` skips `lib.sh` so the bit is not re-added.

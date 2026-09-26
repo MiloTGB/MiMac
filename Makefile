@@ -3,7 +3,7 @@ REPO_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 SCRIPTS := $(REPO_ROOT)/scripts
 BIN_DIR   := $(REPO_ROOT)/bin
 
-.PHONY: trim-services all install fix-exec setup brew post-install tools dotfiles defaults trackpad uninstall nuke update updates pull maintain check tidy harden status doctor dock sync sync-commit sync-prune sync-clean sync-login-items setup-dry nuke-execute picker bf mimac-status build-tools manual help snapshot-prefs
+.PHONY: trim-services all install fix-exec setup brew post-install tools dotfiles defaults trackpad uninstall nuke update updates pull maintain check tidy harden status doctor dock sync sync-commit sync-prune sync-clean sync-login-items setup-dry nuke-execute picker mimac-status build-tools manual help snapshot-prefs
 
 # Build a Go tool: $(call go-build,<binary>,<tool-dir>)
 define go-build
@@ -111,14 +111,14 @@ check: ## Lint the repo: shellcheck every script, go vet every TUI
 	@command -v shellcheck >/dev/null 2>&1 || { echo "error: shellcheck is not installed. Install it with: brew install shellcheck"; exit 1; }
 	@printf '  \033[36m▸\033[0m shellcheck\n'
 	@shellcheck $$(grep -lE '^#!.*(ba)?sh' $(SCRIPTS)/* $(BIN_DIR)/* $(BIN_DIR)/lib/*.sh $(REPO_ROOT)/assets/preferences/*.sh 2>/dev/null)
-	@for d in bf picker mimac-status theme; do \
+	@for d in picker mimac-status theme; do \
 		printf '  \033[36m▸\033[0m go vet tools/%s\n' "$$d"; \
 		(cd "$(REPO_ROOT)/tools/$$d" && go vet ./...) || exit 1; \
 	done
 	@printf '  \033[32m✓\033[0m all checks passed\n'
 
 tidy: ## Run go mod tidy in every tool directory (builds no longer do this)
-	@for d in bf picker mimac-status theme; do \
+	@for d in picker mimac-status theme; do \
 		printf '  \033[36m▸\033[0m go mod tidy: tools/%s\n' "$$d"; \
 		(cd "$(REPO_ROOT)/tools/$$d" && go mod tidy) || exit 1; \
 	done
@@ -146,19 +146,13 @@ snapshot-prefs: ## Export app preferences
 
 build-tools: ## Build all Go TUI binaries (requires Go)
 	@printf '\n\033[1;34m══ Building TUI Tools\033[0m\n\n'
-	@$(MAKE) --no-print-directory picker bf mimac-status
+	@$(MAKE) --no-print-directory picker mimac-status
 
 picker: ## Build the mimac-picker TUI binary
 	$(call go-build,mimac-picker,picker)
 	@mkdir -p "$(HOME)/bin"
 	@ln -sf "$(BIN_DIR)/mimac-picker" "$(HOME)/bin/mimac-picker"
 	@printf '  \033[32m✓\033[0m mimac-picker → ~/bin/mimac-picker\n'
-
-bf: ## Build the bf Brewfile manager TUI binary
-	$(call go-build,bf,bf)
-	@mkdir -p "$(HOME)/bin"
-	@ln -sf "$(BIN_DIR)/bf" "$(HOME)/bin/bf"
-	@printf '  \033[32m✓\033[0m bf → ~/bin/bf\n'
 
 mimac-status: ## Build the mimac-status health dashboard TUI binary
 	$(call go-build,mimac-status,mimac-status)

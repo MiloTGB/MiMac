@@ -16,7 +16,6 @@ Everything is idempotent — run any command as often as you like.
 | `make updates` | Any time | Install macOS updates for this version. **Never a major upgrade** — `ARGS=-n` to preview |
 | `make sync` | After installing or removing apps | Pick which new Homebrew packages go into the Brewfile |
 | `status` | Any time | Health dashboard TUI (`make status` for the plain-text version) |
-| `syncall` | End of day | Commit and push every GitHub repo under `$HOME`, behind a secret scan |
 
 All of these also work from `~` — `~/Makefile` forwards them to the repo.
 
@@ -49,7 +48,7 @@ permissions, old-hostname completion caches, `~/bin` links, stale TUI binaries).
 | `make snapshot-prefs` | Export app preferences to `~/.mimac/preferences` |
 | `make trim-services` | Disable background launchd agents this Mac does not need (`ARGS=-n` to preview) |
 | `make harden` | Security hardening (Touch ID sudo via `sudo_local`, screen lock, firewall) |
-| `make build-tools` | Build the Go TUIs: `bf`, `mimac-picker`, `mimac-status` |
+| `make build-tools` | Build the Go TUIs: `mimac-picker`, `mimac-status` |
 | `make check` | Lint the repo: shellcheck every script, `go vet` every TUI |
 | `make tidy` | `go mod tidy` in every tool (builds no longer do this) |
 | `make tools` / `make dotfiles` | Relink `~/bin` / dotfiles only |
@@ -87,12 +86,6 @@ in to 1Password/Bitwarden and cloud storage.
   script there, and a re-run never overwrites the originals it recorded.
 - Nothing installs a major macOS upgrade on its own — that is always done by hand.
 
-`syncall` commits and pushes every GitHub repository under `$HOME`, and it stages with
-`git add -A` — so every commit is gated behind a secret scan that refuses private keys,
-credential assignments, bearer tokens and vendor API-key prefixes. A repository that fails
-the scan is left staged and uncommitted; the sweep continues. See the
-[manual](docs/manual.md#syncing-every-repository-syncall).
-
 ## Structure
 
 ```
@@ -101,13 +94,13 @@ MiMac/
 ├── Brewfile            # Homebrew packages
 ├── dotfiles/           # Symlinked to ~/
 │   └── Makefile        # ~/Makefile — daily commands from anywhere
-├── bin/                # Commands linked to ~/bin (macos-updates, audio-mode, zoom-mode, …)
+├── bin/                # Commands linked to ~/bin (macos-updates, clear-app-caches, …)
 ├── assets/             # App configs, browser policies
 │   ├── browsers/
 │   ├── launchagents/   # Scheduled jobs installed by Phase 3
 │   ├── preferences/
 │   └── topgrade.toml
-├── tools/              # Go/Bubble Tea TUIs: bf, picker, mimac-status (+ shared theme)
+├── tools/              # Go/Bubble Tea TUIs: picker, mimac-status (+ shared theme)
 ├── docs/
 │   ├── manual.md       # Workflow manual source
 │   └── assets/         # CSS for generated HTML
@@ -121,7 +114,7 @@ MiMac/
     ├── check-updates   # Weekly "MiMac has new commits" prompt (non-blocking)
     ├── defaults.sh     # macOS defaults
     ├── hardening.sh    # Security hardening
-    └── ...             # status, syncall, trim-services, snapshot-prefs, uninstall, etc.
+    └── ...             # status, trim-services, snapshot-prefs, uninstall, etc.
 ```
 
 ## License

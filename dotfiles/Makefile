@@ -39,7 +39,7 @@ pull: ## Fast-forward MiMac to origin
 snapshot-prefs: ## Export app preferences
 	@$(MAKE) -C $(MIMAC) snapshot-prefs --no-print-directory
 
-build-tools: ## Rebuild the Go TUIs (bf, mimac-picker, mimac-status)
+build-tools: ## Rebuild the Go TUIs (mimac-picker, mimac-status)
 	@$(MAKE) -C $(MIMAC) build-tools --no-print-directory
 
 manual: ## Regenerate docs/index.html from docs/manual.md
