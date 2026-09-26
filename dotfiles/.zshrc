@@ -1,7 +1,7 @@
 # ==============================================================================
 #  .zshrc — Sourced for INTERACTIVE shells
 #  Maintainer: milothegalaxyboy
-#  Rev: 2026-02-16
+#  Rev: 2026-09-25
 # ==============================================================================
 
 # --- Oh My Zsh (OMZ) Configuration ---
@@ -11,8 +11,12 @@ zstyle ':omz:update' mode auto
 COMPLETION_WAITING_DOTS="true"
 plugins=(git zsh-autosuggestions zsh-syntax-highlighting z colored-man-pages command-not-found gh)
 
-# Load Oh My Zsh
-source "$ZSH/oh-my-zsh.sh"
+# Load Oh My Zsh (guarded: a hard failure here would abort the rest of .zshrc)
+if [[ -f "$ZSH/oh-my-zsh.sh" ]]; then
+  source "$ZSH/oh-my-zsh.sh"
+else
+  echo "MiMac: oh-my-zsh not found at $ZSH — install it before sourcing .zshrc" >&2
+fi
 
 # --- PATH Customization ---
 # Add user-specific and Python paths. Homebrew path is set in .zprofile.
@@ -51,13 +55,11 @@ elif [ -s "$NVM_DIR/nvm.sh" ]; then
 fi
 unset NVM_CD_FLAGS 2>/dev/null  # keep env tidy
 
-# Install lightweight shims that load NVM only on demand
-if ! typeset -f nvm >/dev/null; then
+# Install lightweight shims that load NVM only on demand — and only when there
+# is an nvm to load. Without that guard the shims shadowed Homebrew's node, npm
+# and npx on a machine with no nvm at all, and every call failed.
+if [[ -n "$_nvm_source" ]] && ! typeset -f nvm >/dev/null; then
   _nvm_lazy_load() {
-    if [ -z "$_nvm_source" ]; then
-      printf "%s\n" "nvm lazy-loader: no valid nvm.sh found. Check Homebrew or ~/.nvm." >&2
-      return 1
-    fi
     # Load NVM once
     . "$_nvm_source"
     # Optional: completions (Homebrew path)

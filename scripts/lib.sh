@@ -70,6 +70,22 @@ setup_logging() {
   fi
 }
 
+# Scripts in scripts/ that setup does NOT link into ~/bin: phase entry points
+# (run them through make), sourced helpers, and dev-only tools. doctor reads
+# the same list, so a name added here is neither linked nor reported missing.
+mimac_skip_link() {
+  case "$1" in
+    brew-packages|install|setup|post-install) return 0 ;;  # internal phases
+    defaults.sh|hardening.sh|lib.sh) return 0 ;;           # helpers, not commands
+    uninstall|dev-test.sh) return 0 ;;                      # use make targets
+    # ~/bin/status belongs to the mimac-status TUI (make mimac-status links
+    # it). Linking this script too made setup and build-tools overwrite each
+    # other's link on every run. `make status` still runs this script.
+    status) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 mimac_mktemp()   { mktemp    "${TMPDIR:-/tmp}/mimac.XXXXXX"; }
 mimac_mktemp_d() { mktemp -d "${TMPDIR:-/tmp}/mimac.XXXXXX"; }
 

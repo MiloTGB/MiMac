@@ -45,7 +45,7 @@ brew "ffmpeg"
 brew "sox"
 
 # Applications
-cask "adapter", greedy: true
+cask "4k-video-downloader+", greedy: true
 cask "antigravity", greedy: true
 cask "appcleaner", greedy: true
 cask "audio-hijack", greedy: true
@@ -62,6 +62,7 @@ cask "loopback", greedy: true
 cask "minecraft", greedy: true
 cask "notunes", greedy: true
 cask "pearcleaner", greedy: true
+cask "prismlauncher", greedy: true
 cask "scratch", greedy: true
 cask "steam", greedy: true
 cask "the-unarchiver", greedy: true

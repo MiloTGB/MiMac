@@ -66,7 +66,7 @@ open_extension_urls(){
     url="${url%"${url##*[![:space:]]}"}"  # trim trailing whitespace
     [[ -z "$url" ]] && continue
     open "$url"
-    ((count++))
+    count=$((count + 1))
   done < "$list_file"
   log "Opened $count $name extension URL(s)"
 }
@@ -478,7 +478,7 @@ install_launch_agent(){
   ok "Installed LaunchAgent → $plist_name"
 }
 
-# Clears the Discord and Chrome caches daily at 03:00. The agent invokes
+# Clears the Discord caches daily at 03:00. The agent invokes
 # ~/bin/clear-app-caches, which `make setup` symlinks into place — install the
 # agent after that link exists, or the first run finds nothing to execute.
 install_launch_agent "com.user.clear_app_caches.plist" || failed=$(( failed + 1 ))

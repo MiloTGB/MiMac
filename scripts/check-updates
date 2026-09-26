@@ -3,18 +3,56 @@ set -euo pipefail
 IFS=$'\n\t'
 
 # MiMac weekly update checker
-# Runs silently unless updates are available
+# Runs silently unless updates are available.
+# Zero blocking network I/O on shell startup — compares against the last
+# fetched remote, then refreshes origin in a disowned background fetch.
+#
+# Deliberately does not source lib.sh: this runs on every interactive shell
+# start, and sourcing a library there costs exactly what this avoids.
 
 # Configuration
 CACHE_DIR="${HOME}/.cache/mimac"
 TIMESTAMP_FILE="${CACHE_DIR}/last-update-check"
 CHECK_INTERVAL_DAYS=7
-REPO_DIR="${REPO_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+
+# Handled above the first side effect: before its prompt this writes the
+# rate-limit timestamp and disowns a git fetch, so --help must not reach them.
+usage() {
+  cat <<'EOF'
+check-updates — say, at most weekly, when MiMac has upstream commits
+
+Usage:
+  check-updates [--help | -h]
+
+Meant to run from shell startup. Exits silently when the shell is not
+interactive, when it already ran in the last 7 days, or when there is nothing
+new. Otherwise it offers to run `make pull`. It never blocks on the network:
+it compares against the last fetched remote, then refreshes origin in a
+disowned background fetch.
+EOF
+}
+
+case "${1:-}" in
+  -h|--help) usage; exit 0 ;;
+  ?*)        usage >&2; printf '\nunknown argument: %s\n' "$1" >&2; exit 2 ;;
+esac
+
+# Resolve symlinks so this works when called via the ~/bin symlink
+_resolve_self() {
+  local target="$1"
+  while [[ -L "$target" ]]; do
+    local dir; dir="$(cd "$(dirname "$target")" && pwd)"
+    target="$(readlink "$target")"
+    [[ "$target" != /* ]] && target="$dir/$target"
+  done
+  cd "$(dirname "$target")" && pwd
+}
+REPO_DIR="${REPO_DIR:-$(_resolve_self "${BASH_SOURCE[0]}")/..}"
+REPO_DIR="$(cd "$REPO_DIR" && pwd)"
 
 # Exit silently if not in an interactive shell
 [[ -t 0 ]] || exit 0
 
-# Create cache directory if needed
 mkdir -p "$CACHE_DIR"
 
 # Check if enough time has passed since last check
@@ -32,34 +70,39 @@ if [[ ! -d "$REPO_DIR/.git" ]]; then
   exit 0
 fi
 
-# Fetch updates quietly, exit on network failure
-if ! git -C "$REPO_DIR" fetch --quiet 2>/dev/null; then
-  exit 0
-fi
-
-# Compare local HEAD with remote
-local_head=$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null) || exit 0
-remote_head=$(git -C "$REPO_DIR" rev-parse origin/main 2>/dev/null) || exit 0
-
-# Update timestamp after successful check
+# Rate-limit before comparing, so new shells don't re-enter this week
 date +%s > "$TIMESTAMP_FILE"
 
-# Exit if already up to date
+bg_fetch() { { git -C "$REPO_DIR" fetch --quiet 2>/dev/null || true; } & disown; }
+
+# symbolic-ref with `|| true`: under pipefail a missing origin/HEAD would
+# otherwise end the script silently before the fallback could apply.
+default_branch=$(git -C "$REPO_DIR" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)
+default_branch="${default_branch#origin/}"
+default_branch="${default_branch:-main}"
+
+# Compare local HEAD with the last fetched remote (no blocking fetch)
+local_head=$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null) || exit 0
+remote_head=$(git -C "$REPO_DIR" rev-parse "origin/$default_branch" 2>/dev/null) || { bg_fetch; exit 0; }
+
 if [[ "$local_head" == "$remote_head" ]]; then
+  bg_fetch
   exit 0
 fi
 
-# Check if local is behind remote
+# Local has diverged or is ahead; don't prompt
 if ! git -C "$REPO_DIR" merge-base --is-ancestor "$local_head" "$remote_head" 2>/dev/null; then
-  # Local has diverged or is ahead; don't prompt
+  bg_fetch
   exit 0
 fi
 
-# Prompt user for update
-printf '\033[33mMiMac updates available.\033[0m Update now? [y/N] '
+printf '\033[33mMiMac updates available.\033[0m Pull them now? [y/N] '
 read -r response </dev/tty
 case "$response" in
   [yY]|[yY][eE][sS])
-    make -C "$REPO_DIR" update
+    make -C "$REPO_DIR" pull
     ;;
 esac
+
+# Refresh remote refs for next session (non-blocking)
+bg_fetch

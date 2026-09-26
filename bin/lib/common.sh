@@ -26,6 +26,7 @@ log()  { printf '%s  ▸%s %s\n' "$_CYN" "$_RST" "$*" >&2; }
 ok()   { printf '%s  ✓%s %s\n' "$_GRN" "$_RST" "$*" >&2; }
 warn() { printf '%s  ⚠%s %s\n' "$_YLW" "$_RST" "$*" >&2; }
 err()  { printf '%s  ✗%s %s\n' "$_RED" "$_RST" "$*" >&2; }
+info() { printf '    %s\n' "$*" >&2; }
 
 # ── Confirmation prompt ─────────────────────────────────────────────────────
 

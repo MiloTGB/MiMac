@@ -1,8 +1,29 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2088  # "~/..." in messages is display text, never a path
 set -euo pipefail
-IFS=$'\n\t'
 
-# Resolve symlinks
+# MiMac doctor — find what is quietly wrong with this Mac's setup, and fix the
+# parts that are safe to fix.
+#
+# `status` says what is installed; doctor says what is broken or drifting. Each
+# check here exists because the problem it looks for was found on a real
+# machine, doing damage nobody had noticed:
+#
+#   - compinit rejecting a group-writable /usr/local/share/zsh and rebuilding its
+#     completion cache on every new shell — 5x slower startup (0.35s vs 0.07s)
+#   - an Intel Homebrew tree and python@3.9 scripts carried from an Intel Mac by
+#     Migration Assistant, leaving `pip` on PATH with no interpreter behind it
+#   - a LocalHostName still naming the previous Mac's chip
+#   - ~/bin links left dangling after a script was removed from the repo
+#
+# --fix repairs only what is inside $HOME or owned by you and cannot lose data:
+# the PATH line, completion-dir permissions, dangling ~/bin links, missing
+# ~/bin links, and stale TUI binaries. Everything else prints the command to
+# run, and is yours to decide.
+#
+# Bash 3.2-clean, and every Homebrew check is guarded, so it runs on a fresh
+# Mac before Homebrew exists.
+
 _self="${BASH_SOURCE[0]}"
 while [[ -L "$_self" ]]; do
   _dir="$(cd "$(dirname "$_self")" && pwd)"
@@ -10,49 +31,464 @@ while [[ -L "$_self" ]]; do
   [[ "$_self" != /* ]] && _self="$_dir/$_self"
 done
 SCRIPT_DIR="$(cd "$(dirname "$_self")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # shellcheck source=lib.sh
 source "$SCRIPT_DIR/lib.sh"
 
-MODE="${1:-check}" # check | --fix | fix
-STATUS=0
+usage() {
+  cat <<'EOF'
+doctor — check this Mac's MiMac setup for problems, and optionally fix them
 
-check_bin() {
-  case ":$PATH:" in
-    *":$HOME/bin:"*) ok "${HOME}/bin is on PATH" ;;
-    *)
-      warn "${HOME}/bin is NOT on PATH"
-      STATUS=1
-      ;;
-  esac
+Usage:
+  doctor [check]      Report problems; exit 1 if any were found (default)
+  doctor --fix        Repair what is safe to repair, then report the rest
+  doctor --help       Show this help
+
+From the repo: make doctor, or make doctor ARGS=--fix
+
+Checks: PATH, dotfile and ~/bin links, shell startup time, Intel-era leftovers
+(Homebrew in /usr/local, commands whose interpreter is gone, Rosetta-only
+apps, a hostname naming another chip), Touch ID for sudo, firewall, TUI
+binaries older than their source, LaunchAgents, brew doctor, Brewfile drift,
+and whether the MiMac repo is behind or has uncommitted work.
+EOF
 }
 
-fix_bin() {
-  mkdir -p "$HOME/bin"
-  # shellcheck disable=SC2016  # Intentionally looking for literal $HOME
-  if ! grep -q '\$HOME/bin' "${HOME}/.zshrc" 2>/dev/null; then
-    # shellcheck disable=SC2016
-    {
-      echo ''
-      echo '# Added by MiMac doctor'
-      echo '[ -d "$HOME/bin" ] && case ":$PATH:" in *":$HOME/bin:"*) ;; *) export PATH="$HOME/bin:$PATH";; esac'
-    } >>"${HOME}/.zshrc"
-    ok "Added ~/bin to PATH in .zshrc"
-  fi
-}
+FIX=0
+case "${1:-check}" in
+  check)      ;;
+  --fix|fix)  FIX=1 ;;
+  -h|--help)  usage; exit 0 ;;
+  *)          usage >&2; printf '\nunknown argument: %s\n' "$1" >&2; exit 2 ;;
+esac
+if (( $# > 1 )); then
+  usage >&2; printf '\nunknown argument: %s\n' "$2" >&2; exit 2
+fi
 
-case "$MODE" in
-  check)
-    check_bin
-    exit "${STATUS}"
-    ;;
-  --fix | fix)
-    fix_bin
-    ok "Fixes applied"
-    exit 0
-    ;;
+PROBLEMS=0
+FIXED=0
+problem() { warn "$*"; PROBLEMS=$(( PROBLEMS + 1 )); }
+fixed()   { ok "fixed: $*"; FIXED=$(( FIXED + 1 )); }
+hint()    { info "→ $*"; }
+
+INSTALL_BIN="$HOME/bin"
+# The ~ comes from a variable: bash 5 tilde-expands a bare ~ in the replacement,
+# turning this into a no-op there while bash 3.2 printed it as intended.
+tilde() { local t='~'; printf '%s' "${1/#"$HOME"/$t}"; }
+
+###############################################################################
+# PATH                                                                        #
+###############################################################################
+
+section "PATH"
+case ":$PATH:" in
+  *":$HOME/bin:"*) ok "~/bin is on PATH" ;;
   *)
-    err "Unknown mode: $MODE"
-    exit 2
+    if (( FIX )); then
+      mkdir -p "$HOME/bin"
+      # shellcheck disable=SC2016  # literal $HOME, written into .zshrc
+      if ! grep -q '\$HOME/bin' "$HOME/.zshrc" 2>/dev/null; then
+        # shellcheck disable=SC2016
+        printf '\n# Added by MiMac doctor\n[ -d "$HOME/bin" ] && case ":$PATH:" in *":$HOME/bin:"*) ;; *) export PATH="$HOME/bin:$PATH";; esac\n' >> "$HOME/.zshrc"
+      fi
+      fixed "added ~/bin to PATH in ~/.zshrc (open a new shell)"
+    else
+      problem "~/bin is not on PATH"
+      hint "make doctor ARGS=--fix"
+    fi
     ;;
 esac
+
+###############################################################################
+# Links                                                                       #
+###############################################################################
+
+section "Links"
+
+# Dotfiles — the same set setup links
+linked=0
+shopt -s dotglob nullglob
+for src in "$REPO_ROOT/dotfiles"/*; do
+  name="$(basename "$src")"
+  case "$name" in *.example|README*|*.md) continue ;; esac
+  dst="$HOME/$name"
+  if [[ -L "$dst" && "$(readlink "$dst")" == "$src" ]]; then
+    linked=$(( linked + 1 ))
+  elif [[ -e "$dst" ]]; then
+    problem "~/$name is a real file, not a link to MiMac — edits to the repo copy do not reach it"
+    hint "make dotfiles  (moves the current file to ~/.mimac/backups first)"
+  else
+    problem "~/$name is missing"
+    hint "make dotfiles"
+  fi
+done
+shopt -u dotglob nullglob
+(( linked > 0 )) && ok "$linked dotfile(s) linked"
+
+# ~/bin: dangling links into this repo, and repo commands not linked yet
+dangling=0
+while IFS= read -r -d '' link; do
+  target="$(readlink "$link" 2>/dev/null || true)"
+  [[ "$target" == "$REPO_ROOT"/* && ! -e "$target" ]] || continue
+  if (( FIX )) && rm -f "$link"; then
+    fixed "removed dangling $(tilde "$link") → $(tilde "$target")"
+  else
+    problem "$(tilde "$link") points at $(tilde "$target"), which no longer exists"
+    dangling=1
+  fi
+done < <(find "$INSTALL_BIN" -maxdepth 1 -type l -print0 2>/dev/null || true)
+(( dangling )) && hint "make doctor ARGS=--fix  (or make tools)"
+
+unlinked=()
+for f in "$REPO_ROOT"/scripts/* "$REPO_ROOT"/bin/*; do
+  [[ -f "$f" && -x "$f" ]] || continue
+  base="$(basename "$f")"
+  [[ "$f" == "$REPO_ROOT/scripts/"* ]] && mimac_skip_link "$base" && continue
+  [[ -L "$INSTALL_BIN/$base" && "$(readlink "$INSTALL_BIN/$base")" == "$f" ]] && continue
+  # A different command already owns the name — not ours to replace.
+  [[ -e "$INSTALL_BIN/$base" && ! -L "$INSTALL_BIN/$base" ]] && continue
+  unlinked+=("$base")
+done
+if (( ${#unlinked[@]} > 0 )); then
+  if (( FIX )) && "$SCRIPT_DIR/setup" --only tools >/dev/null 2>&1; then
+    fixed "linked ${unlinked[*]} into ~/bin"
+  else
+    problem "not linked into ~/bin yet: ${unlinked[*]}"
+    hint "make tools"
+  fi
+elif (( ! dangling )); then
+  ok "~/bin links are current"
+fi
+
+###############################################################################
+# Shell startup                                                               #
+###############################################################################
+
+section "Shell startup"
+
+login_shell="$(dscl . -read "/Users/$USER" UserShell 2>/dev/null | awk '{print $2}' || true)"
+[[ -x "$login_shell" ]] || login_shell="$(command -v zsh || true)"
+
+if [[ "$(basename "${login_shell:-}")" != zsh ]]; then
+  info "Login shell is ${login_shell:-unknown}, not zsh — skipping"
+else
+  # compaudit on the fpath a new terminal builds. compinit -i drops what
+  # compaudit flags, so the file count it caches never matches and oh-my-zsh
+  # rebuilds the dump on every new shell. Owned by you: chmod fixes it. Not
+  # owned by you: print the command.
+  #
+  # `env -u FPATH`, never the inherited one. `brew shellenv` exports FPATH, and
+  # in any terminal where oh-my-zsh has run, compinit -i has already removed the
+  # insecure directories from it — so a check that inherited it looked at a path
+  # scrubbed of the very thing it was looking for, and reported "secure".
+  # shellcheck disable=SC2016  # expanded by zsh, not here
+  insecure="$(env -u FPATH "$login_shell" -f -c '
+    fpath=(${HOMEBREW_PREFIX:-/opt/homebrew}/share/zsh/site-functions(N/)
+           ${ZSH:-$HOME/.oh-my-zsh}/{functions,completions,custom/functions,custom/completions}(N/)
+           $fpath)
+    autoload -Uz compaudit; compaudit' 2>/dev/null || true)"
+  if [[ -z "$insecure" ]]; then
+    ok "Completion directories are secure — the completion cache is reused"
+  else
+    while IFS= read -r d; do
+      [[ -n "$d" && -d "$d" ]] || continue
+      if (( FIX )) && [[ -O "$d" ]] && chmod g-w,o-w "$d"; then
+        fixed "removed group/world write from $d"
+      else
+        problem "$d is group- or world-writable — compinit rejects it and rebuilds its cache on every new shell"
+        if [[ -O "$d" ]]; then
+          hint "make doctor ARGS=--fix"
+        else
+          hint "sudo chmod g-w,o-w '$d'"
+        fi
+      fi
+    done <<< "$insecure"
+  fi
+
+  # oh-my-zsh names its completion cache after LocalHostName, so renaming the
+  # Mac (or migrating from another one) orphans the old caches. Regenerated on
+  # demand, so removing them loses nothing.
+  host="$(scutil --get LocalHostName 2>/dev/null || true)"
+  if [[ -n "$host" && -z "${ZDOTDIR:-}" ]]; then
+    stale=()
+    for f in "$HOME"/.zcompdump-*; do
+      [[ -f "$f" && "$f" != "$HOME/.zcompdump-$host-"* ]] && stale+=("$f")
+    done
+    if (( ${#stale[@]} > 0 )); then
+      if (( FIX )) && rm -f "${stale[@]}"; then
+        fixed "removed ${#stale[@]} completion cache(s) left from an old hostname"
+      else
+        info "${#stale[@]} completion cache(s) belong to an old hostname, not $host — make doctor ARGS=--fix removes them"
+      fi
+    fi
+  fi
+
+  # Time what opening a terminal costs: a login, interactive shell started from
+  # an empty environment, as launchd starts one — not from this shell's. An
+  # inherited FPATH and PATH give oh-my-zsh a different fpath from the one its
+  # cache was built for, so timing from here measured a cache rebuild, and left
+  # a cache behind that the next real terminal had to rebuild again.
+  new_terminal() {
+    env -i HOME="$HOME" USER="$USER" LOGNAME="${LOGNAME:-$USER}" SHELL="$login_shell" \
+      TERM="${TERM:-xterm-256color}" PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+      "$login_shell" -il -c exit </dev/null >/dev/null 2>&1
+  }
+  # Warm-up, discarded: absorbs the one-off rebuild after a fix above, or after
+  # an oh-my-zsh update, so the number reported is what every terminal pays.
+  new_terminal || true
+  # bash's `time` keyword reports on the shell's own stderr, so the function's
+  # redirects silence zsh without also silencing the measurement.
+  t="$( TIMEFORMAT=%R; { time new_terminal; } 2>&1 || true)"
+  if [[ -n "$t" ]]; then
+    if awk -v t="$t" 'BEGIN{exit !(t > 0.25)}'; then
+      problem "A new terminal takes ${t}s to start (expect under 0.2s on Apple Silicon)"
+      hint "profile it: zsh -i -c 'zmodload zsh/zprof' — or fix the items above first"
+    else
+      ok "A new terminal starts in ${t}s"
+    fi
+  fi
+fi
+
+###############################################################################
+# Apple Silicon hygiene                                                       #
+###############################################################################
+
+if [[ "$(uname -m)" == arm64 ]]; then
+  section "Apple Silicon"
+
+  chip="$(sysctl -n machdep.cpu.brand_string 2>/dev/null || true)"
+  [[ -n "$chip" ]] && ok "$chip, native Homebrew at $(command -v brew 2>/dev/null | sed 's|/bin/brew$||' || echo '?')"
+
+  # Intel Homebrew carried over by Migration Assistant. Nothing on an arm64
+  # Mac uses it, but /usr/local/bin is still on the default PATH, so what it
+  # left there can shadow real commands.
+  if [[ -d /usr/local/Homebrew ]]; then
+    size="$(du -sh /usr/local/Homebrew 2>/dev/null | awk '{print $1}' || true)"
+    problem "Intel Homebrew is still in /usr/local/Homebrew (${size:-?}) — unused on Apple Silicon"
+    # Just that folder, into the Trash — not Homebrew's uninstaller, which
+    # deletes for good and sweeps more of /usr/local, where var/ can hold
+    # databases (on the Mac this was written on: an old Postgres data dir).
+    # Moved into $HOME first because /usr/local needs sudo and ~/.Trash is
+    # privacy-protected from a terminal without Full Disk Access; `trash` then
+    # files it as you, so Finder's Put Back works.
+    hint "move it to the Trash (recoverable; leaves the rest of /usr/local alone):"
+    hint "  sudo mv /usr/local/Homebrew ~/Homebrew-intel && trash ~/Homebrew-intel /usr/local/share/zsh/site-functions/_brew"
+  fi
+
+  # Commands whose interpreter is gone: a shebang naming a file that does not
+  # exist, or a symlink to nothing. Checked where migrations leave them.
+  dead=()
+  for dir in /usr/local/bin /usr/local/sbin "$HOME/bin" "$HOME/.local/bin"; do
+    [[ -d "$dir" ]] || continue
+    for f in "$dir"/*; do
+      if [[ -L "$f" && ! -e "$f" ]]; then
+        dead+=("$(tilde "$f") (dangling link)")
+        continue
+      fi
+      [[ -f "$f" && -x "$f" ]] || continue
+      shebang="$(head -c 256 "$f" 2>/dev/null | head -n 1 | LC_ALL=C tr -d '\0' || true)"
+      [[ "$shebang" == '#!'* ]] || continue
+      interp="${shebang#\#!}"; interp="${interp# }"; interp="${interp%% *}"
+      [[ "$interp" == /* && ! -x "$interp" ]] && dead+=("$(tilde "$f") (needs $interp)")
+    done
+  done
+  if (( ${#dead[@]} > 0 )); then
+    problem "${#dead[@]} command(s) on PATH cannot run:"
+    for d in "${dead[@]}"; do info "  $d"; done
+    hint "move them to the Trash (they are leftovers, not MiMac's) — e.g. trash /usr/local/bin/pip"
+  else
+    ok "Every command checked on PATH has a working interpreter"
+  fi
+
+  # Hostname still naming another chip (e.g. MacBook-Pro-M1 on an M3).
+  chip_gen="$(grep -oE 'M[0-9]+' <<< "$chip" | head -1 || true)"
+  if [[ -n "$chip_gen" ]]; then
+    for kind in LocalHostName ComputerName HostName; do
+      name="$(scutil --get "$kind" 2>/dev/null || true)"
+      [[ -n "$name" ]] || continue
+      name_gen="$(grep -oE '(^|[^A-Za-z0-9])M[0-9]+([^0-9]|$)' <<< "$name" | grep -oE 'M[0-9]+' | head -1 || true)"
+      if [[ -n "$name_gen" && "$name_gen" != "$chip_gen" ]]; then
+        problem "$kind '$name' names an $name_gen — this Mac is an $chip"
+        hint "sudo scutil --set $kind '${name//$name_gen/$chip_gen}'"
+        [[ "$kind" == LocalHostName ]] && hint "then: rm ~/.zcompdump-${name}-*  (oh-my-zsh caches per hostname)"
+      fi
+    done
+  fi
+
+  # Apps with no arm64 slice run translated under Rosetta 2. Reported, not a
+  # problem: sometimes there is no native build to switch to.
+  rosetta=()
+  for app in /Applications/*.app "$HOME"/Applications/*.app; do
+    [[ -d "$app" ]] || continue
+    exe="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist" 2>/dev/null || true)"
+    [[ -n "$exe" && -f "$app/Contents/MacOS/$exe" ]] || continue
+    archs="$(lipo -archs "$app/Contents/MacOS/$exe" 2>/dev/null || true)"
+    [[ -n "$archs" && "$archs" != *arm64* ]] && rosetta+=("$(basename "$app" .app)")
+  done
+  if (( ${#rosetta[@]} > 0 )); then
+    info "Intel-only, runs under Rosetta 2: ${rosetta[*]}"
+  else
+    ok "Every app in /Applications is native arm64"
+  fi
+fi
+
+###############################################################################
+# Security                                                                    #
+###############################################################################
+
+section "Security"
+
+tid_on() { grep -qE '^[[:space:]]*auth[[:space:]]+sufficient[[:space:]]+pam_tid\.so' "$1" 2>/dev/null; }
+if tid_on /etc/pam.d/sudo || tid_on /etc/pam.d/sudo_local; then
+  ok "Touch ID for sudo is on"
+else
+  info "Touch ID for sudo is off — make harden turns it on (in sudo_local, which survives macOS updates)"
+fi
+
+fw="$(/usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate 2>/dev/null || true)"
+case "$fw" in
+  *enabled*) ok "Firewall is on" ;;
+  "")        info "Could not read the firewall state" ;;
+  *)         info "Firewall is off — make harden turns it on" ;;
+esac
+
+###############################################################################
+# MiMac tools                                                                 #
+###############################################################################
+
+section "MiMac tools"
+
+# Go TUIs: missing, or older than their source (go.mod/go.sum included — a
+# dependency bump changes the binary without touching a .go file, and tools
+# that import the shared theme go stale when it changes).
+if command -v go >/dev/null 2>&1; then
+  stale=()
+  for pair in bf:bf mimac-picker:picker mimac-status:mimac-status; do
+    bin_name="${pair%%:*}"; src="$REPO_ROOT/tools/${pair#*:}"
+    bin="$REPO_ROOT/bin/$bin_name"
+    [[ -d "$src" ]] || continue
+    dirs=("$src")
+    grep -q 'mimac-theme' "$src/go.mod" 2>/dev/null && dirs+=("$REPO_ROOT/tools/theme")
+    if [[ ! -x "$bin" ]] || [[ -n "$(find "${dirs[@]}" \( -name '*.go' -o -name go.mod -o -name go.sum \) -newer "$bin" -print -quit 2>/dev/null)" ]]; then
+      stale+=("$bin_name")
+    fi
+  done
+  if (( ${#stale[@]} == 0 )); then
+    ok "TUI binaries are current"
+  elif (( FIX )) && make -C "$REPO_ROOT" --no-print-directory build-tools >/dev/null 2>&1; then
+    fixed "rebuilt ${stale[*]}"
+  else
+    problem "missing or older than their source: ${stale[*]}"
+    hint "make build-tools"
+  fi
+else
+  info "Go not installed — skipping TUI binary check"
+fi
+
+# LaunchAgents shipped in assets/launchagents
+shopt -s nullglob
+for plist in "$REPO_ROOT"/assets/launchagents/*.plist; do
+  label="$(basename "$plist" .plist)"
+  dest="$HOME/Library/LaunchAgents/$label.plist"
+  if [[ ! -f "$dest" ]]; then
+    info "$label is not installed — make post-install installs it"
+    continue
+  fi
+  if ! cmp -s "$plist" "$dest"; then
+    problem "$label differs from the repo copy — launchd is running an old definition"
+    hint "make post-install"
+    continue
+  fi
+  state="$(launchctl print "gui/$(id -u)/$label" 2>/dev/null || true)"
+  if [[ -z "$state" ]]; then
+    problem "$label is installed but not loaded"
+    hint "launchctl load ~/Library/LaunchAgents/$label.plist"
+    continue
+  fi
+  code="$(awk -F' = ' '/last exit code/{print $2; exit}' <<< "$state")"
+  if [[ -n "$code" && "$code" != 0 && "$code" != "(never exited)" ]]; then
+    problem "$label last exited with $code"
+    hint "log show --last 1d --predicate 'process == \"bash\"' | grep -i cache  — or run it by hand"
+  else
+    ok "$label is loaded and last run succeeded"
+  fi
+done
+shopt -u nullglob
+
+###############################################################################
+# Homebrew                                                                    #
+###############################################################################
+
+section "Homebrew"
+
+if ! command -v brew >/dev/null 2>&1; then
+  info "Homebrew is not installed — make brew"
+else
+  if brew_out="$(brew doctor 2>&1)"; then
+    ok "brew doctor: no warnings"
+  else
+    problem "brew doctor reported warnings:"
+    printf '%s\n' "$brew_out" | sed 's/^/      /' | head -30 >&2
+  fi
+
+  # Drift between the Brewfile and this Mac, both directions. Reported, not a
+  # problem: an app tried out and not yet kept is normal.
+  BREWFILE="$REPO_ROOT/Brewfile"
+  if [[ -f "$BREWFILE" ]]; then
+    want_f="$(grep -oE '^brew "[^"]+"' "$BREWFILE" | cut -d'"' -f2 | sort -u)"
+    want_c="$(grep -oE '^cask "[^"]+"' "$BREWFILE" | cut -d'"' -f2 | sort -u)"
+    have_leaves="$(brew leaves 2>/dev/null | sort -u)"
+    have_f="$(brew list --formula -1 2>/dev/null | sort -u)"
+    have_c="$(brew list --cask -1 2>/dev/null | sort -u)"
+
+    untracked="$( { comm -13 <(printf '%s\n' "$want_f") <(printf '%s\n' "$have_leaves");
+                    comm -13 <(printf '%s\n' "$want_c") <(printf '%s\n' "$have_c"); } | sed '/^$/d' | tr '\n' ' ')"
+    missing="$( { comm -23 <(printf '%s\n' "$want_f") <(printf '%s\n' "$have_f");
+                  comm -23 <(printf '%s\n' "$want_c") <(printf '%s\n' "$have_c"); } | sed '/^$/d' | tr '\n' ' ')"
+
+    if [[ -z "$untracked" && -z "$missing" ]]; then
+      ok "Brewfile matches what is installed"
+    fi
+    if [[ -n "$untracked" ]]; then
+      info "Installed but not in the Brewfile: ${untracked% }"
+      info "→ make sync  (choose which to keep)"
+    fi
+    if [[ -n "$missing" ]]; then
+      info "In the Brewfile but not installed: ${missing% }"
+      info "→ make brew to install, or make sync-clean to drop them"
+    fi
+  fi
+fi
+
+###############################################################################
+# MiMac repo                                                                  #
+###############################################################################
+
+section "MiMac repo"
+
+if [[ -d "$REPO_ROOT/.git" ]]; then
+  dirty="$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+  counts="$(git -C "$REPO_ROOT" rev-list --left-right --count 'HEAD...@{upstream}' 2>/dev/null || true)"
+  ahead="${counts%%[[:space:]]*}"; behind="${counts##*[[:space:]]}"
+  if (( dirty == 0 )) && [[ "${ahead:-0}" == 0 && "${behind:-0}" == 0 ]]; then
+    ok "Clean and in step with origin (as of the last fetch)"
+  fi
+  (( dirty > 0 )) && info "$dirty uncommitted change(s) in $(tilde "$REPO_ROOT")"
+  [[ -n "$ahead"  && "$ahead"  != 0 ]] && info "$ahead local commit(s) not pushed"
+  [[ -n "$behind" && "$behind" != 0 ]] && info "$behind commit(s) behind origin → make pull"
+fi
+
+###############################################################################
+# Summary                                                                     #
+###############################################################################
+
+echo "" >&2
+(( FIXED > 0 )) && ok "Fixed $FIXED item(s)."
+if (( PROBLEMS == 0 )); then
+  ok "No problems found."
+  exit 0
+fi
+warn "$PROBLEMS problem(s) need attention — see the → lines above."
+(( FIX )) || info "make doctor ARGS=--fix repairs the ones marked as fixable."
+exit 1

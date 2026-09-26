@@ -3,7 +3,7 @@ REPO_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 SCRIPTS := $(REPO_ROOT)/scripts
 BIN_DIR   := $(REPO_ROOT)/bin
 
-.PHONY: trim-services all install fix-exec setup brew post-install tools dotfiles defaults trackpad uninstall nuke update updates harden status doctor dock sync sync-commit sync-prune sync-clean sync-login-items setup-dry nuke-execute picker bf mimac-status build-tools manual help snapshot-prefs
+.PHONY: trim-services all install fix-exec setup brew post-install tools dotfiles defaults trackpad uninstall nuke update updates pull maintain check tidy harden status doctor dock sync sync-commit sync-prune sync-clean sync-login-items setup-dry nuke-execute picker bf mimac-status build-tools manual help snapshot-prefs
 
 # Build a Go tool: $(call go-build,<binary>,<tool-dir>)
 define go-build
@@ -12,7 +12,7 @@ define go-build
 		exit 1; \
 	fi
 	@printf '  \033[36m▸\033[0m Building $(1)…\n'
-	@cd "$(REPO_ROOT)/tools/$(2)" && go mod tidy && go build -o "$(BIN_DIR)/$(1)" .
+	@cd "$(REPO_ROOT)/tools/$(2)" && go build -o "$(BIN_DIR)/$(1)" .
 	@chmod +x "$(BIN_DIR)/$(1)"
 endef
 
@@ -78,8 +78,19 @@ nuke-execute: ## DESTRUCTIVE: Execute complete MiMac removal (requires confirmat
 update: ## Upgrade all packages (topgrade or brew)
 	@if command -v topgrade >/dev/null 2>&1; then topgrade; else brew update && brew upgrade; fi
 
-updates: ## Run macOS software updates
-	@softwareupdate -ia || true
+updates: ## Install macOS updates for this version — never a major upgrade (ARGS=-n to preview)
+	@"$(BIN_DIR)/macos-updates" $(ARGS)
+
+pull: ## Fast-forward MiMac to origin (git pull --ff-only)
+	@git -C "$(REPO_ROOT)" pull --ff-only
+
+maintain: ## Weekly upkeep: pull, relink, update packages + macOS, rebuild TUIs, doctor
+	-@$(MAKE) --no-print-directory pull
+	-@$(MAKE) --no-print-directory tools
+	-@$(MAKE) --no-print-directory update
+	-@$(MAKE) --no-print-directory updates
+	-@$(MAKE) --no-print-directory build-tools
+	@$(MAKE) --no-print-directory doctor
 
 harden: ## Apply macOS security hardening
 	@"$(SCRIPTS)/hardening.sh"
@@ -90,9 +101,27 @@ trim-services: ## Disable background launchd agents this Mac does not need (ARGS
 status: ## Show installation status
 	@"$(SCRIPTS)/status"
 
-doctor: ## Run diagnostics
-	@"$(SCRIPTS)/doctor"
-	@brew doctor
+doctor: ## Find what is broken or drifting on this Mac (ARGS=--fix to repair the safe items)
+	@# doctor exits 1 when problems remain, for scripts that call ~/bin/doctor.
+	@# Its summary already says so; letting make add "*** [doctor] Error 1"
+	@# (and "Error 2" through ~/Makefile) made a report read like a crash.
+	@"$(SCRIPTS)/doctor" $(ARGS) || true
+
+check: ## Lint the repo: shellcheck every script, go vet every TUI
+	@command -v shellcheck >/dev/null 2>&1 || { echo "error: shellcheck is not installed. Install it with: brew install shellcheck"; exit 1; }
+	@printf '  \033[36m▸\033[0m shellcheck\n'
+	@shellcheck $$(grep -lE '^#!.*(ba)?sh' $(SCRIPTS)/* $(BIN_DIR)/* $(BIN_DIR)/lib/*.sh $(REPO_ROOT)/assets/preferences/*.sh 2>/dev/null)
+	@for d in bf picker mimac-status theme; do \
+		printf '  \033[36m▸\033[0m go vet tools/%s\n' "$$d"; \
+		(cd "$(REPO_ROOT)/tools/$$d" && go vet ./...) || exit 1; \
+	done
+	@printf '  \033[32m✓\033[0m all checks passed\n'
+
+tidy: ## Run go mod tidy in every tool directory (builds no longer do this)
+	@for d in bf picker mimac-status theme; do \
+		printf '  \033[36m▸\033[0m go mod tidy: tools/%s\n' "$$d"; \
+		(cd "$(REPO_ROOT)/tools/$$d" && go mod tidy) || exit 1; \
+	done
 
 dock: ## Populate Dock with preferred apps
 	@"$(SCRIPTS)/dock-setup"

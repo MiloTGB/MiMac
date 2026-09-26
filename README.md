@@ -1,123 +1,91 @@
-# MiMac — macOS bootstrap
+# MiMac — daily driver for this Mac
 
-Personal, opinionated macOS bootstrap tailored to my workflow and toolset. Idempotent setup in three phases.
+Personal, opinionated macOS setup tailored to my workflow and toolset: the dotfiles,
+tools and settings this Mac runs on, plus the commands that keep it healthy.
+Everything is idempotent — run any command as often as you like.
 
 **[Full workflow manual →](https://milotgb.github.io/MiMac/)**
 
-## Quick Start
+## Daily Use
 
-```bash
-git clone https://github.com/MiloTGB/MiMac.git ~/MiMac
-cd ~/MiMac
-make install
-make brew
-make post-install
-make dock
-```
+| Command | When | What it does |
+|---------|------|--------------|
+| `make maintain` | Weekly | Pull MiMac, relink tools, update packages and macOS, rebuild the TUIs, then `doctor` |
+| `make doctor` | When something feels off | Find what is broken or drifting — see below. `ARGS=--fix` repairs the safe items |
+| `make update` | Any time | Upgrade every package (topgrade: Homebrew, casks, oh-my-zsh, pipx, gh extensions) |
+| `make updates` | Any time | Install macOS updates for this version. **Never a major upgrade** — `ARGS=-n` to preview |
+| `make sync` | After installing or removing apps | Pick which new Homebrew packages go into the Brewfile |
+| `status` | Any time | Health dashboard TUI (`make status` for the plain-text version) |
+| `syncall` | End of day | Commit and push every GitHub repo under `$HOME`, behind a secret scan |
 
-## Phases
+All of these also work from `~` — `~/Makefile` forwards them to the repo.
 
-| Phase | Command | What it does |
-|-------|---------|--------------|
-| **1 — Setup** | `make install` | Xcode CLI tools, dotfile symlinks, tool linking, macOS defaults, login shell |
-| **2 — Brew** | `make brew` | Installs Homebrew, then interactively selects formulae & casks from `Brewfile` |
-| **3 — Post-install** | `make post-install` | App preferences, browser policies, login items |
+### What `make doctor` checks
 
-Run `make all` to execute all three phases at once. Phases are independent — run any subset, in any order, as many times as you want.
+- **Links** — every dotfile linked, no dangling `~/bin` links, no repo command left unlinked
+- **Shell startup** — insecure completion directories that make oh-my-zsh rebuild its cache
+  on every new shell, and how long a new shell actually takes
+- **Apple Silicon hygiene** — an Intel Homebrew left in `/usr/local`, commands on `PATH` whose
+  interpreter is gone, apps that only run under Rosetta 2, a hostname naming another chip
+- **Security** — Touch ID for `sudo`, firewall
+- **MiMac tools** — TUI binaries older than their source, LaunchAgents out of date or failing
+- **Homebrew** — `brew doctor`, and drift between the Brewfile and what is installed
+- **The repo** — uncommitted work, commits not pushed, commits not pulled
+
+`--fix` only touches what is yours and cannot lose data (the `PATH` line, completion-directory
+permissions, old-hostname completion caches, `~/bin` links, stale TUI binaries). Everything else prints the command to run.
 
 ## Make Targets
 
 | Target | Description |
 |--------|-------------|
-| `make install` / `make setup` | Phase 1 (setup) |
-| `make brew` | Phase 2 (Homebrew) |
-| `make post-install` | Phase 3 (app config) |
-| `make all` | All three phases |
-| `make sync` | Snapshot installed Homebrew packages into the Brewfile |
-| `make snapshot-prefs` | Export app preferences |
-| `make tools` | Link scripts into `~/bin` only |
-| `make dotfiles` | Symlink dotfiles only |
-| `make defaults` | Apply macOS defaults only |
-| `make trackpad` | Apply defaults including trackpad gestures |
-| `make dock` | Set up Dock with preferred apps |
-| `make harden` | Security hardening (Touch ID sudo, firewall) |
-| `make trim-services` | Disable background launchd agents this Mac does not need (`ARGS=-n` to preview) |
-| `make status` | Show installation status |
-| `make doctor` | Check `~/bin` is on PATH; `make doctor --fix` adds it to `.zshrc` |
+| `make maintain` | Weekly upkeep: pull, relink, update, macOS updates, rebuild TUIs, doctor |
+| `make doctor` | Health check (`ARGS=--fix` to repair the safe items) |
 | `make update` | Update via topgrade (or brew) |
-| `make updates` | Install macOS software updates |
-| `make picker` | Build the mimac-picker TUI binary |
+| `make updates` | macOS updates for the installed version only (`ARGS=-n` to preview) |
+| `make pull` | Fast-forward MiMac to origin |
+| `make sync` | Snapshot installed Homebrew packages into the Brewfile |
+| `make status` | Show installation status |
+| `make snapshot-prefs` | Export app preferences to `~/.mimac/preferences` |
+| `make trim-services` | Disable background launchd agents this Mac does not need (`ARGS=-n` to preview) |
+| `make harden` | Security hardening (Touch ID sudo via `sudo_local`, screen lock, firewall) |
+| `make build-tools` | Build the Go TUIs: `bf`, `mimac-picker`, `mimac-status` |
+| `make check` | Lint the repo: shellcheck every script, `go vet` every TUI |
+| `make tidy` | `go mod tidy` in every tool (builds no longer do this) |
+| `make tools` / `make dotfiles` | Relink `~/bin` / dotfiles only |
+| `make defaults` / `make trackpad` | Apply macOS defaults (with trackpad gestures) |
+| `make dock` | Set up Dock with preferred apps |
+| `make install` / `make brew` / `make post-install` | Setup phases 1–3 (see below) |
+| `make uninstall` | Remove symlinks, optionally roll back defaults |
 | `make manual` | Regenerate `docs/index.html` from `docs/manual.md` |
-| `make uninstall` | Remove symlinks, optionally rollback defaults |
-| `make fix-exec` | Fix executable permissions on scripts |
 | `make help` | Show all available make commands |
 
-## Migrating to a New Machine
+## Setting Up a Mac
 
-### Step 1: Snapshot Your Current Machine
-
-Before leaving your old machine, capture its current state using the `snapshot` tool (lives at `~/bin/snapshot`, not in the repo):
+Three idempotent phases. Run them on a fresh Mac, or re-run any one to repair this one.
 
 ```bash
-snapshot
-cd ~/MiMac
-git push
-```
-
-This updates the Brewfile, Dock layout, and app preferences to match what's actually installed. Review the diff before pushing — it's your chance to drop anything you don't want to carry forward.
-
-### Step 2: Set Up the New Machine
-
-On the fresh Mac:
-
-```bash
-# Install Xcode Command Line Tools (if not already present)
-xcode-select --install
-
-# Clone and run Phase 1 (dotfiles, tools, defaults)
 git clone https://github.com/MiloTGB/MiMac.git ~/MiMac
 cd ~/MiMac
-make install
-```
-
-Phase 1 doesn't need Homebrew — it links dotfiles, sets macOS defaults, and configures your shell.
-
-### Step 3: Install Homebrew Packages
-
-```bash
-make brew
-```
-
-This installs Homebrew if needed, then walks you through an interactive selection of formulae and casks from the Brewfile. Already-installed packages are skipped automatically.
-
-### Step 4: Configure Apps
-
-```bash
-make post-install
+make install        # Phase 1: Xcode CLI tools, dotfiles, ~/bin, macOS defaults, login shell
+make brew           # Phase 2: Homebrew, then pick formulae & casks from the Brewfile
+make post-install   # Phase 3: app preferences, browser policies, login items, LaunchAgents
 make dock
+make doctor         # confirm everything landed
 ```
 
-Post-install applies app preferences (iTerm2, Audio Hijack, browser policies) and sets up login items. `make dock` populates the Dock with your preferred app layout.
+`make all` runs all three phases and builds the TUIs. Phase 1 needs no Homebrew.
 
-### Step 5: Manual Steps
-
-Some things can't be automated:
-
-- **Mac App Store apps** — Final Cut Pro, iMovie, Keynote, Numbers, Pages, Pixelmator Pro (sign in to the App Store and redownload)
-- **Manual installers** — FL Studio, FL Cloud Plugins
-- **Safari settings** — sandboxed on macOS Sequoia+, configure in Safari → Settings
-- **1Password / Bitwarden** — sign in and sync
-- **Cloud storage** — sign in to iCloud, Google Drive, Dropbox, etc.
+Some things stay manual: Mac App Store apps (Final Cut Pro, iMovie, Keynote, Numbers,
+Pages, Pixelmator Pro), FL Studio, Safari settings (sandboxed since Sequoia), and signing
+in to 1Password/Bitwarden and cloud storage.
 
 ## Philosophy
 
-Setup is split into phases so you can:
-
-- Run Phase 1 on a fresh Mac before Homebrew is even available
-- Selectively install only the Homebrew packages you want (Phase 2 is interactive)
-- Re-run any phase independently without side effects
-
-State lives in `~/.mimac`. Rollback scripts are generated automatically for defaults changes.
+- Every command is idempotent and safe to re-run.
+- State lives in `~/.mimac`. Defaults, hardening and trim-services each write a rollback
+  script there, and a re-run never overwrites the originals it recorded.
+- Nothing installs a major macOS upgrade on its own — that is always done by hand.
 
 `syncall` commits and pushes every GitHub repository under `$HOME`, and it stages with
 `git add -A` — so every commit is gated behind a secret scan that refuses private keys,
@@ -132,32 +100,28 @@ MiMac/
 ├── Makefile            # All targets
 ├── Brewfile            # Homebrew packages
 ├── dotfiles/           # Symlinked to ~/
-│   └── Makefile        # ~/Makefile proxy for sync/prefs/picker/manual
-├── bin/                # Extra scripts linked to ~/bin
+│   └── Makefile        # ~/Makefile — daily commands from anywhere
+├── bin/                # Commands linked to ~/bin (macos-updates, audio-mode, zoom-mode, …)
 ├── assets/             # App configs, browser policies
 │   ├── browsers/
 │   ├── launchagents/   # Scheduled jobs installed by Phase 3
 │   ├── preferences/
 │   └── topgrade.toml
-├── tools/
-│   └── picker/         # mimac-picker TUI (Go/Bubble Tea)
+├── tools/              # Go/Bubble Tea TUIs: bf, picker, mimac-status (+ shared theme)
 ├── docs/
 │   ├── manual.md       # Workflow manual source
 │   └── assets/         # CSS for generated HTML
 └── scripts/
     ├── lib.sh          # Shared helpers
-    ├── install         # Unified entrypoint (dispatches to phases)
+    ├── doctor          # Health check
     ├── setup           # Phase 1
     ├── brew-packages   # Phase 2
     ├── post-install    # Phase 3
     ├── sync            # Brewfile sync
-    ├── snapshot-prefs  # Export app preferences
-    ├── dock-setup      # Dock layout
-    ├── status          # Installation status
+    ├── check-updates   # Weekly "MiMac has new commits" prompt (non-blocking)
     ├── defaults.sh     # macOS defaults
     ├── hardening.sh    # Security hardening
-    ├── uninstall       # Conservative uninstaller
-    └── ...             # doctor, syncall, check-updates, etc.
+    └── ...             # status, syncall, trim-services, snapshot-prefs, uninstall, etc.
 ```
 
 ## License

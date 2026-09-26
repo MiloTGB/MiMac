@@ -439,7 +439,7 @@ install_brewfile() {
     # Handle formulae (now interactive like casks)
     if [[ "$line" =~ ^brew\ \"([^\"]+)\" ]]; then
       local formula="${BASH_REMATCH[1]}"
-      ((formulae_count++))
+      formulae_count=$((formulae_count + 1))
       
       if (( NO_FORMULAE )); then
         continue
@@ -458,7 +458,7 @@ install_brewfile() {
     # Handle casks
     if [[ "$line" =~ ^cask\ \"([^\"]+)\" ]]; then
       local cask="${BASH_REMATCH[1]}"
-      ((casks_count++))
+      casks_count=$((casks_count + 1))
       
       if (( NO_CASKS )); then
         continue
@@ -510,7 +510,7 @@ install_brewfile() {
           continue
         fi
         echo "${formula_lines[$name]}" >> "$TEMP_BREWFILE"
-        ((selected_count++))
+        selected_count=$((selected_count + 1))
       fi
     done
     FORMULAE_INSTALLED=$selected_count
@@ -542,7 +542,7 @@ install_brewfile() {
           continue
         fi
         echo "${cask_lines[$name]}" >> "$TEMP_BREWFILE"
-        ((selected_count++))
+        selected_count=$((selected_count + 1))
       fi
     done
     CASKS_INSTALLED=$selected_count
@@ -565,7 +565,7 @@ install_brewfile() {
     return 0
   else
     err "Brewfile installation failed"
-    ((ERRORS++))
+    ERRORS=$((ERRORS + 1))
     return 1
   fi
 }
@@ -610,7 +610,7 @@ main() {
   # Phase 2: Install from Brewfile
   if ! install_brewfile; then
     err "Failed to install packages from Brewfile"
-    ((ERRORS++))
+    ERRORS=$((ERRORS + 1))
   fi
 
   # Installation summary

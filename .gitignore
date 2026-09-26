@@ -44,7 +44,6 @@ test-*
 *.test
 
 # Generated files
-.install-manifest
 MANIFEST.json
 
 # Browser extension lists (user-specific)

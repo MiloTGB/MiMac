@@ -1,146 +1,134 @@
 ---
-title: "MiMac — macOS Bootstrap Manual"
-subtitle: "Workflow guide for managing, maintaining, and migrating your Mac setup"
+title: "MiMac — Daily Driver Manual"
+subtitle: "Using, maintaining and repairing this Mac's setup"
 date: "[github.com/MiloTGB/MiMac](https://github.com/MiloTGB/MiMac)"
 ---
 
 # Overview
 
-**MiMac** is a personal, opinionated macOS bootstrap system tailored to my workflow and toolset. It automates the configuration of a Mac from a clean install, managing the shell environment, dotfiles, macOS system preferences, Homebrew packages, app settings, login items, and personal app preferences.
+**MiMac** is a personal, opinionated macOS setup tailored to my workflow and toolset. It
+holds this Mac's shell environment, dotfiles, macOS preferences, Homebrew packages, app
+settings and login items — and the commands that keep all of that healthy day to day.
 
-**Key repositories:**
+| Location | Purpose |
+|---|---|
+| `~/MiMac/` | This repo ([MiloTGB/MiMac](https://github.com/MiloTGB/MiMac)). Dotfiles are symlinked from here, so editing the repo edits the live config |
+| `~/bin/` | MiMac's commands, symlinked from `scripts/` and `bin/` |
+| `~/.mimac/` | Local state: rollback scripts, dotfile backups, app-preference snapshots |
 
-| Repo | Location | Purpose |
-|---|---|---|
-| `MiloTGB/MiMac` | `~/MiMac/` | Public bootstrap repo |
-| `~/.mimac/preferences/` | `~/.mimac/preferences/` | Local app preferences backups |
+Every command is idempotent: run it as often as you like, and re-running one is how you
+repair what it set up.
 
-The two-repo split keeps personal preference data (iTerm2 profiles, Audio Hijack settings, etc.) out of the public repo while still making them fully portable across machines.
-
-As long as both repos are kept current, the entire setup can be fully restored on a new machine from scratch — nothing needs to be manually transferred. The repos are the source of truth.
-
-> **Adapting for your own use:** This project is built around a specific setup. If you fork it, you'll need to swap in your own dotfiles, and review the app lists in `scripts/post-install` and `scripts/snapshot-prefs` to match your environment.
+> **Adapting for your own use:** This project is built around a specific setup. If you fork
+> it, swap in your own dotfiles, and review the app lists in `scripts/post-install` and
+> `scripts/snapshot-prefs` to match your environment.
 
 ---
 
-# How It Works — The Three Phases
+# Daily Use & Maintenance
 
-## Phase 1 — Setup (`make setup`)
-
-Script: `scripts/setup`
-
-Sets up the foundational shell environment on a new or existing machine.
-
-**What it does:**
-
-- Installs Xcode Command Line Tools if not present
-- Links everything in `dotfiles/` into `$HOME` as symlinks (with automatic backups of any existing files)
-
-**Managed dotfiles:**
-
-| File | Purpose |
-|---|---|
-| `.aliases` | Shell aliases |
-| `.gitconfig` | Git configuration |
-| `.hushlogin` | Suppresses "Last login" terminal message |
-| `.zprofile` | Zsh login shell profile |
-| `.zshenv` | Zsh environment variables |
-| `.zshrc` | Zsh interactive shell config |
-| `Makefile` | MiMac commands available from `~/` |
-- Links `scripts/` and `bin/` into `~/bin` so tools are on your PATH
-- Applies macOS system preferences via `scripts/defaults.sh`
-- Sets Zsh as the login shell
-- Generates a rollback script at `~/.mimac/defaults-rollback.sh`
-
-**Options:**
-
-```
-make setup --only dotfiles    # Link dotfiles only
-make setup --only tools       # Link scripts/bin only
-make setup --only defaults    # Apply macOS defaults only
-make setup --dry-run          # Preview changes without applying
-make dotfiles                 # Shorthand for --only dotfiles
-make tools                    # Shorthand for --only tools
-make defaults                 # Shorthand for --only defaults
-make trackpad                 # Apply defaults including trackpad settings
-```
-
-## Phase 2 — Homebrew (`make brew`)
-
-Script: `scripts/brew-packages`
-
-Installs Homebrew and all packages listed in the `Brewfile`.
-
-**What it does:**
-
-- Installs Homebrew if not present
-- Runs `brew bundle install` from the Brewfile
-- Presents interactive prompts for packages that are new (not previously installed)
-- Uses the mimac-picker TUI or `gum` to let you select which packages to accept
-
-## Phase 3 — Post-Install (`make post-install`)
-
-Script: `scripts/post-install`
-
-Configures installed apps. Must be run after Phase 2.
-
-**What it does:**
-
-- **Topgrade:** Links `assets/topgrade.toml` to `~/.config/topgrade.toml`
-- **Browsers:** Applies Chrome/Brave managed policies; opens extension install URLs on request
-- **App defaults:** Applies `defaults write` settings for Audio Hijack, Rogue Amoeba update settings
-- **Preferences import:** Imports preferences from `~/.mimac/preferences/` into the system
-- **Plist imports:** Imports personal preference plists; skips any app that already has a preferences file (non-destructive)
-- **App Support restore:** Restores Loopback and SoundSource configuration files (non-destructive)
-- **Login items:** Registers login items for installed apps
-- **LaunchAgents:** Installs and loads the scheduled maintenance jobs (see below)
-
-**Managed app preferences:**
-
-| App | Plist imported |
-|---|---|
-| iTerm2 | ✓ |
-| Loopback | ✓ + App Support files |
-| SoundSource | ✓ + App Support files |
-| Audio Hijack | ✓ |
-| BetterSnapTool | ✓ |
-| Ice | ✓ |
-| Raycast | ✓ |
-| Stats | ✓ |
-| Farrago | ✓ |
-| Piezo | ✓ |
-| Typora | ✓ |
-| Hot | ✓ |
-| Keka | ✓ |
-| TimeMachineEditor | ✓ |
-| MacWhisper | ✓ |
-
-**Scheduled maintenance (LaunchAgents):**
-
-Agents are copied from `assets/launchagents/` into `~/Library/LaunchAgents` and loaded
-immediately. Phase 3 unloads before it loads, because launchd keys a job by its `Label`
-rather than by the file — a bare `load` against an already-loaded label fails and silently
-keeps the previous definition, so an edited schedule would not take effect until logout.
-
-| Label | Runs | What it does |
+| Command | When | What it does |
 |---|---|---|
-| `com.user.clear_app_caches` | Daily at 03:00, and at login | Runs `~/bin/clear-app-caches`, clearing the Discord and Google Chrome cache directories |
+| `make maintain` | Weekly | The whole routine below, in order, then `doctor` |
+| `make doctor` | When something feels off | Find what is broken or drifting. `ARGS=--fix` repairs the safe items |
+| `make update` | Any time | Upgrade every package via topgrade |
+| `make updates` | Any time | macOS updates for this version only — never a major upgrade |
+| `make sync` | After installing or removing apps | Record new Homebrew packages in the Brewfile |
+| `status` | Any time | Health dashboard TUI; `make status` prints the plain-text version |
+| `syncall` | End of day | Commit and push every GitHub repo under `$HOME`, behind a secret scan |
 
-`make uninstall` unloads and deletes these agents, and `nuke-mimac` unloads and trashes
-them. Both have to: the agent invokes a `~/bin` symlink that each of them removes, so
-leaving the job registered would schedule a daily run against a path that no longer exists.
-`nuke-mimac` handles them before it touches `~/bin`, and also runs
-`~/.mimac/services-rollback.sh` if `trim-services` has written one.
+Every one of these works from `~/` as well — `~/Makefile` forwards them to the repo.
 
-Because `clear-app-caches` runs unattended here, it refuses to do anything when `HOME` is
-unset or is not a directory — without that guard every `rm -rf "$HOME/Library/…"` in it
-would become an absolute path outside the home directory.
-
-## Full Install
+## The Weekly Routine (`make maintain`)
 
 ```bash
-make all        # Runs setup + brew + post-install in sequence
-exec zsh        # Reload shell after setup
+make maintain
+```
+
+Runs, in order, carrying on past a step that fails so that `doctor` always gets the last word:
+
+1. `make pull` — fast-forward MiMac to origin (`git pull --ff-only`; a diverged repo is left alone)
+2. `make tools` — link any new commands into `~/bin`, and remove links to ones that were deleted
+3. `make update` — topgrade
+4. `make updates` — macOS updates for the installed version
+5. `make build-tools` — rebuild the Go TUIs (about a second on Apple Silicon)
+6. `make doctor`
+
+## Health Check (`make doctor`)
+
+`make status` says what is installed; `make doctor` says what is broken. Each check exists
+because the problem it looks for was found on a real machine, doing damage nobody had noticed.
+
+```bash
+make doctor              # Report; exits 1 if anything needs attention
+make doctor ARGS=--fix   # Repair the safe items, then report the rest
+```
+
+| Area | What it looks for |
+|---|---|
+| PATH | `~/bin` on `PATH` |
+| Links | Every dotfile linked; no dangling `~/bin` links; no repo command left unlinked |
+| Shell startup | Group- or world-writable completion directories, and how long a new shell takes |
+| Apple Silicon | Intel Homebrew in `/usr/local`; commands on `PATH` whose interpreter is gone; apps with no arm64 build; a hostname naming another chip |
+| Security | Touch ID for `sudo`; firewall |
+| MiMac tools | TUI binaries older than their source; LaunchAgents out of date, unloaded or failing |
+| Homebrew | `brew doctor`; drift between the Brewfile and what is installed, both directions |
+| The repo | Uncommitted work, commits not pushed, commits not pulled |
+
+**What `--fix` touches:** only what is inside `$HOME` or owned by you and cannot lose data —
+the `PATH` line, permissions on completion directories you own, completion caches left by an old hostname, dangling and missing `~/bin`
+links, and stale TUI binaries. Everything else — removing an old Intel Homebrew, renaming the
+Mac, deleting leftover commands in `/usr/local/bin` — prints the command and leaves the
+decision to you.
+
+**Why shell startup is a check.** oh-my-zsh runs `compinit -i`, which silently drops any
+completion directory `compaudit` calls insecure. The completion cache then never matches the
+directories on disk, so it is rebuilt on every new shell. On the machine this was found on — a
+group-writable `/usr/local/share/zsh` carried over from an Intel Mac — every new terminal took
+0.35 s instead of 0.07 s.
+
+## Package Updates (`make update`)
+
+Runs topgrade with `assets/topgrade.toml` (linked to `~/.config/topgrade.toml` by Phase 3):
+Homebrew formulae, every cask including self-updating ones (`greedy_cask`), oh-my-zsh, pipx,
+tldr pages, `gh` extensions, and a pull of this repo. Steps it deliberately skips:
+
+| Step | Why |
+|---|---|
+| `system` | macOS updates go through `make updates`, which never installs a major upgrade |
+| `claude_code_plugins` | Runs `claude plugin marketplace update`, which grabs the terminal and gets suspended by `SIGTTOU` — freezing the whole topgrade run |
+| `claude_code` | Claude Code updates itself |
+| `node`, `pnpm` | Not used on this Mac |
+
+## macOS Updates (`make updates`)
+
+```bash
+make updates ARGS=-n   # Preview: what would install, what is left alone
+make updates           # Install
+```
+
+`bin/macos-updates` lists what Apple offers and installs, by label, only the updates for the
+installed major version: point releases, security updates, Safari, Command Line Tools. It
+names each major upgrade (macOS 15 → 26, say) and leaves it alone; do those by hand in
+System Settings when you are ready.
+
+This replaced `softwareupdate -ia`, which installs *everything* Apple lists — and Apple lists
+the next major macOS among them, marked Recommended. In mrk, the project MiMac forked from,
+that command started an unrequested 26 GB OS download that kept going after the command
+exited. If the list cannot be parsed, nothing is installed.
+
+## Update Notices (`check-updates`)
+
+Runs from `.zshrc`, at most once a week. When the repo has new commits on origin it asks
+*"MiMac updates available. Pull them now?"* and runs `make pull`. It never blocks shell
+startup on the network: it compares against the last fetched state and refreshes it with a
+background `git fetch` for next time.
+
+## Linting the Repo (`make check`)
+
+```bash
+make check    # shellcheck every script, go vet every TUI
+make tidy     # go mod tidy in every tool — builds no longer do this themselves
 ```
 
 ---
@@ -150,11 +138,14 @@ exec zsh        # Reload shell after setup
 ## Keeping the Brewfile Current (`make sync`)
 
 Whenever you install a new Homebrew package, run `make sync` to record it in the Brewfile.
+`make doctor` lists drift in both directions if you forget.
 
 ```bash
 make sync             # Interactive — opens mimac-picker TUI to select packages
 make sync ARGS=-n     # Dry run — show what would be added, make no changes
 make sync ARGS=-c     # Auto-commit the Brewfile after updating
+make sync-prune       # Preview Brewfile entries that are no longer installed
+make sync-clean       # Remove them and commit
 ```
 
 **How sync works:**
@@ -168,23 +159,19 @@ make sync ARGS=-c     # Auto-commit the Brewfile after updating
 7. Inserts each entry alphabetically within its section
 
 > **Note:** The mimac-picker binary lives at `bin/mimac-picker` (gitignored, platform-specific).
-> If it's missing, rebuild it first with `make picker`.
+> If it's missing, rebuild it with `make build-tools`.
 
 ## Keeping App Preferences Current (`make snapshot-prefs`)
 
-After configuring an app, run `make snapshot-prefs` to capture and push the preferences.
+After configuring an app, run `make snapshot-prefs` to capture its preferences.
 
 ```bash
 make snapshot-prefs
 ```
 
-**How snapshot-prefs works:**
-
-1. Exports the preference plist for each of the managed apps using `defaults export`
-2. Copies app-specific Application Support files (e.g. Loopback)
-3. Saves all changes locally to `~/.mimac/preferences/`
-
-Snapshots are idempotent — if nothing changed, they won't overwrite the file.
+1. Exports the preference plist for each managed app (iTerm2, Loopback, SoundSource, Audio Hijack) using `defaults export`
+2. Copies Loopback and SoundSource Application Support files
+3. Saves everything to `~/.mimac/preferences/`, where Phase 3 imports it from
 
 ## Syncing Every Repository (`syncall`)
 
@@ -254,6 +241,17 @@ agent, so for those the override lands but the process keeps running until the n
 The script says *"disabled — takes effect at next login"* in that case rather than claiming
 it stopped something it did not.
 
+## Security Hardening (`make harden`)
+
+Opt-in. Each step records the previous state in `~/.mimac/hardening-rollback.sh` before
+changing anything, and a re-run never overwrites what the first run recorded.
+
+| Step | How |
+|---|---|
+| Touch ID for `sudo` | Adds `pam_tid.so` to `/etc/pam.d/sudo_local` — the file Apple's own template calls the "local config file which survives system update". Editing `/etc/pam.d/sudo` instead, as MiMac once did, is undone by every macOS update |
+| Password immediately on wake | `sysadminctl -screenLock immediate`, which asks for your login password. The old `com.apple.screensaver` keys are no longer read by macOS |
+| Firewall | Global firewall and stealth mode on |
+
 ## Updating This Manual (`make manual`)
 
 The manual source lives in the repo at `docs/manual.md`. After editing it, regenerate the HTML and commit:
@@ -276,196 +274,182 @@ git push
 
 ---
 
-# Before Migrating to a New Machine
+# How It Works — The Three Phases
 
-Run these steps on the **old machine** before you transfer.
+The phases build this Mac's setup from scratch, and re-running any one repairs what it owns.
 
-**1. Sync the Brewfile**
+## Phase 1 — Setup (`make install`)
 
-```bash
-make sync ARGS=-c
+Script: `scripts/setup`
+
+- Installs Xcode Command Line Tools if not present
+- Links everything in `dotfiles/` into `$HOME` as symlinks (backing up any real file first)
+- Links `scripts/` and `bin/` into `~/bin`, and removes `~/bin` links whose target was deleted
+- Applies macOS system preferences via `scripts/defaults.sh`, recording a rollback script at `~/.mimac/defaults-rollback.sh`
+- Sets Zsh as the login shell
+
+**Managed dotfiles:**
+
+| File | Purpose |
+|---|---|
+| `.aliases` | Shell aliases and functions |
+| `.gitconfig` | Git configuration |
+| `.hushlogin` | Suppresses "Last login" terminal message |
+| `.zprofile` | Zsh login shell profile (Homebrew environment) |
+| `.zshenv` | Zsh environment variables |
+| `.zshrc` | Zsh interactive shell config |
+| `Makefile` | MiMac's daily commands, available from `~/` |
+
+**Running part of Phase 1:**
+
+```
+make dotfiles                 # Link dotfiles only
+make tools                    # Link scripts/bin into ~/bin only
+make defaults                 # Apply macOS defaults only
+make trackpad                 # Apply defaults including trackpad settings
+make setup-dry                # Preview Phase 1 without applying
 ```
 
-Captures any packages installed since the last sync and commits the updated Brewfile.
+## Phase 2 — Homebrew (`make brew`)
 
-**2. Snapshot app preferences**
+Script: `scripts/brew-packages`
 
-```bash
-make snapshot-prefs
-```
+- Installs Homebrew if not present
+- Reads the Brewfile, skips what is already installed
+- Lets you pick which of the rest to install, with the mimac-picker TUI or `gum`
 
-Exports all app preference plists plus Application Support files directly to `~/.mimac/preferences/`.
+## Phase 3 — Post-Install (`make post-install`)
 
-**3. Push any pending MiMac changes**
+Script: `scripts/post-install`
 
-```bash
-cd ~/MiMac
-git status
-git push
-```
+Configures installed apps. Run after Phase 2, and again after installing an app it manages.
 
-**4. Verify SSH authentication**
+- **Configs:** Links topgrade, `gh` and htop configs into `~/.config`
+- **Fonts:** Copies `assets/fonts/` into `~/Library/Fonts`
+- **Browsers:** Applies Chrome/Brave managed policies; opens extension install URLs on request
+- **Companion app:** Installs Barkeep from its GitHub releases if missing
+- **App defaults:** Applies `defaults write` settings for Audio Hijack and Rogue Amoeba update settings
+- **Plist imports:** Imports snapshots from `~/.mimac/preferences/`; skips any app that already has a preferences file (non-destructive)
+- **App Support restore:** Restores Loopback and SoundSource configuration files (non-destructive)
+- **Login items:** Registers noTunes, SoundSource and Loopback
+- **LaunchAgents:** Installs and loads the scheduled maintenance jobs (see below)
 
-```bash
-ssh -T git@github.com
-# Expected: Hi MiloTGB! You've successfully authenticated...
-```
+**Managed app preferences:** iTerm2, Audio Hijack, Loopback (+ App Support files),
+SoundSource (+ App Support files).
 
+**Scheduled maintenance (LaunchAgents):**
 
+Agents are copied from `assets/launchagents/` into `~/Library/LaunchAgents` and loaded
+immediately. Phase 3 unloads before it loads, because launchd keys a job by its `Label`
+rather than by the file — a bare `load` against an already-loaded label fails and silently
+keeps the previous definition, so an edited schedule would not take effect until logout.
+`make doctor` flags an installed agent that differs from the repo copy.
 
-**5. Note anything not covered by MiMac**
+| Label | Runs | What it does |
+|---|---|---|
+| `com.user.clear_app_caches` | Daily at 03:00, and at login | Runs `~/bin/clear-app-caches`, clearing the Discord cache directories (Chrome's cache is left alone) |
 
-Write down any apps, license keys, or configurations not yet automated:
+`make uninstall` unloads and deletes these agents, and `nuke-mimac` unloads and trashes
+them. Both have to: the agent invokes a `~/bin` symlink that each of them removes, so
+leaving the job registered would schedule a daily run against a path that no longer exists.
+`nuke-mimac` handles them before it touches `~/bin`, and also runs
+`~/.mimac/services-rollback.sh` if `trim-services` has written one.
 
-- App Store apps (manually reinstall from Purchases)
-- Software licenses (export from your license manager)
-- Any manual system settings not captured by `defaults write`
-- VPN configurations, certificates, etc.
+Because `clear-app-caches` runs unattended here, it refuses to do anything when `HOME` is
+unset or is not a directory — without that guard every `rm -rf "$HOME/Library/…"` in it
+would become an absolute path outside the home directory.
 
 ---
 
-# Setting Up a New Machine
+# Setting Up or Rebuilding a Mac
 
-## Prerequisites
+Needs macOS 15 or later and an internet connection.
 
-- macOS 15 or later
-- Active internet connection
-- Your GitHub SSH key (or ability to create and add one)
-
-## Step 1 — Clone MiMac
-
-**If SSH is already set up:**
-
-```bash
-git clone git@github.com:MiloTGB/MiMac.git ~/MiMac
-```
-
-**If SSH is not yet configured** (fresh machine), clone over HTTPS first:
 ```bash
 git clone https://github.com/MiloTGB/MiMac.git ~/MiMac
-```
-
-## Step 2 — Phase 1: Shell & Dotfiles
-
-```bash
 cd ~/MiMac
-make setup
-exec zsh        # Reload shell to pick up dotfiles and ~/bin
+make install        # Phase 1 — then open a new terminal (or exec zsh)
+make brew           # Phase 2 — the long one
+make post-install   # Phase 3
+make build-tools    # mimac-picker (needed by make sync), bf, mimac-status
+make dock
+make doctor         # Confirm everything landed; ARGS=--fix for the safe repairs
 ```
 
-After this step, the shell is configured, dotfiles are linked, and macOS system preferences are applied.
+`make all` runs Phases 1–3 and `build-tools` in one go. Phase 3 switches the repo's remote
+from HTTPS to SSH once `ssh -T git@github.com` succeeds.
 
-## Step 3 — (If needed) Add SSH Key to GitHub
+**Coming from another Mac with Migration Assistant?** Run `make doctor` first. Migration
+carries over things that do not belong on Apple Silicon — an Intel Homebrew in `/usr/local`,
+scripts pointing at interpreters that no longer exist, a hostname naming the old chip — and
+doctor lists each one with the command that removes it.
 
-If you cloned over HTTPS, add your SSH key now before running Phase 3:
-
-```bash
-# Generate a new key
-ssh-keygen -t ed25519 -C "your-email@example.com"
-
-# Copy the public key
-cat ~/.ssh/id_ed25519.pub | pbcopy
-
-# Add to GitHub: github.com → Settings → SSH and GPG keys → New SSH key
-# Then verify:
-ssh -T git@github.com
-```
-
-## Step 4 — Phase 2: Homebrew
-
-```bash
-make brew
-```
-
-Installs Homebrew (if needed) and all packages from the Brewfile. This step takes the most time depending on how many packages are in the Brewfile.
-
-## Step 5 — Phase 3: App Configuration
-
-```bash
-make post-install
-```
-
-This configures apps, imports your personal preferences from `~/.mimac/preferences/`, and sets up login items.
-
-If `~/.mimac/preferences/` is not populated (SSH wasn't ready), run `make post-install` again once authentication is ready.
-
-## Step 6 — Build mimac-picker
-
-```bash
-make picker
-```
-
-The mimac-picker binary is platform-specific and not stored in git. Build it once after installation. It is required by `make sync`.
-
-## Step 7 — Verify the Installation
-
-```bash
-make status     # Check dotfiles, tools, shell, Homebrew, Brewfile packages
-make doctor     # Run full diagnostics
-```
-
-Review the output and address any items marked with warnings or errors.
-
-## Full One-Command Install
-
-```bash
-cd ~/MiMac
-make all
-exec zsh
-make picker
-```
+**Still manual:** Mac App Store apps (Final Cut Pro, iMovie, Keynote, Numbers, Pages,
+Pixelmator Pro), FL Studio and FL Cloud Plugins, Safari settings (sandboxed since Sequoia),
+and signing in to 1Password/Bitwarden and cloud storage.
 
 ---
 
 # Command Reference
 
-## Commands Available from Anywhere (`~/Makefile`)
+## From Anywhere (`~/Makefile`)
 
-`~/Makefile` is deployed automatically by `make setup` via `dotfiles/`. Running `make help` from `~/` shows all commands from both this file and `MiMac/`.
-
-| Command | Description |
-|---|---|
-| `make sync` | Sync installed Homebrew packages into the Brewfile |
-| `make sync ARGS=-c` | Sync and auto-commit the Brewfile |
-| `make sync ARGS=-n` | Dry run — preview additions without modifying the Brewfile |
-| `make snapshot-prefs` | Export app preferences |
-| `make picker` | Build the mimac-picker TUI binary |
-| `make help` | Show all available commands from `~/` and `MiMac/` |
-
-## Commands from `~/MiMac/`
+`~/Makefile` is linked by Phase 1. `make help` from `~/` lists these first, then everything
+from `~/MiMac/`.
 
 | Command | Description |
 |---|---|
-| `make all` | Full install: setup + brew + post-install |
-| `make setup` / `make install` | Phase 1: shell, dotfiles, macOS defaults |
-| `make brew` | Phase 2: Homebrew packages and casks |
-| `make post-install` | Phase 3: app configs and login items |
-| `make dotfiles` | Link dotfiles only |
-| `make tools` | Install CLI tools only |
-| `make defaults` | Apply macOS defaults only |
-| `make trackpad` | Apply macOS defaults including trackpad settings |
-| `make harden` | Apply macOS security hardening |
-| `make trim-services` | Disable background launchd agents this Mac does not need (`ARGS=-n` to preview) |
-| `make update` | Upgrade all packages (topgrade or brew upgrade) |
-| `make updates` | Run macOS software updates (`softwareupdate -ia`) |
-| `make uninstall` | Remove symlinks and undo setup |
+| `make maintain` | Weekly upkeep: pull, relink, update, macOS updates, rebuild TUIs, doctor |
+| `make doctor` | Health check (`ARGS=--fix` to repair the safe items) |
+| `make update` | Upgrade all packages (topgrade) |
+| `make updates` | macOS updates for this version only (`ARGS=-n` to preview) |
 | `make status` | Show installation status |
-| `make doctor` | Check `~/bin` is on PATH; `--fix` adds it to `.zshrc` |
+| `make sync` | Sync installed Homebrew packages into the Brewfile (`ARGS=-c` commit, `ARGS=-n` dry run) |
+| `make pull` | Fast-forward MiMac to origin |
+| `make snapshot-prefs` | Export app preferences |
+| `make build-tools` | Rebuild the Go TUIs |
+| `make manual` | Regenerate `docs/index.html` |
+
+## From `~/MiMac/`
+
+Everything above, plus:
+
+| Command | Description |
+|---|---|
+| `make all` | Full install: Phases 1–3 + TUI binaries |
+| `make install` / `make setup` | Phase 1: shell, dotfiles, macOS defaults |
+| `make brew` | Phase 2: Homebrew packages and casks |
+| `make post-install` | Phase 3: app configs, login items, LaunchAgents |
+| `make dotfiles` / `make tools` | Relink dotfiles / `~/bin` only |
+| `make defaults` / `make trackpad` | Apply macOS defaults (with trackpad settings) |
+| `make dock` | Populate the Dock |
+| `make harden` | Security hardening |
+| `make trim-services` | Disable background launchd agents this Mac does not need (`ARGS=-n` to preview) |
+| `make sync-prune` / `make sync-clean` | Preview / remove Brewfile entries no longer installed |
+| `make sync-login-items` | Sync system login items into post-install |
+| `make check` | shellcheck every script, `go vet` every TUI |
+| `make tidy` | `go mod tidy` in every tool |
+| `make uninstall` | Remove symlinks and undo setup |
+| `make nuke` / `make nuke-execute` | Preview / perform complete MiMac removal |
 | `make fix-exec` | Make all scripts and bin files executable |
 | `make help` | Show all available commands |
 
 ## Standalone Commands (`~/bin`)
 
-Symlinked into `~/bin` by `make setup`. These have no Make target — run them directly.
+Symlinked into `~/bin` by Phase 1.
 
 | Command | Purpose |
 |---|---|
-| `syncall` | Commit and push every GitHub repository under `$HOME`. Every commit is gated behind the secret scan — see [Syncing Every Repository](#syncing-every-repository-syncall). `--dry-run` previews |
-| `clear-app-caches` | Clears the Discord and Google Chrome cache directories. Also runs unattended from a LaunchAgent daily at 03:00 |
-| `check-updates` | Report available Homebrew and macOS updates |
+| `status` | Health dashboard TUI (`mimac-status`) |
+| `doctor` | Same as `make doctor` |
+| `macos-updates` | Same as `make updates` |
+| `syncall` | Commit and push every GitHub repository under `$HOME`, behind the secret scan — see [Syncing Every Repository](#syncing-every-repository-syncall). `--dry-run` previews |
+| `check-updates` | Weekly "MiMac has new commits" prompt; runs from `.zshrc` |
+| `clear-app-caches` | Clears the Discord cache directories. Also runs from a LaunchAgent daily at 03:00 |
+| `trim-services` | Same as `make trim-services` |
 | `hide_tm.sh` | Hides Time Machine volumes from the Finder sidebar. Volume names as arguments, or set `TM_VOLUMES` |
-| `audio-mode` / `zoom-mode` | Switch the audio device configuration for production or calls |
-| `bf` | Brewfile helper |
+| `audio-mode` / `zoom-mode` | Pause sync clients and distractions for recording sessions or calls |
+| `bf` | Brewfile manager TUI |
 
 > `scripts/lib.sh` and `bin/lib/common.sh` are sourced libraries, not commands. They are
 > tracked non-executable, and `fix-exec` skips `lib.sh` so the bit is not re-added.
@@ -474,32 +458,35 @@ Symlinked into `~/bin` by `make setup`. These have no Make target — run them d
 
 # What `make status` Checks
 
-Running `make status` gives a quick health check of the entire installation:
-
 - **Dotfiles** — Which files are symlinked into `~/` and which are missing
 - **Tools** — Which scripts/bin symlinks are live in `~/bin` and which are broken
 - **macOS Defaults** — Whether defaults have been applied (rollback script present)
-- **Security Hardening** — Whether hardening has been applied
 - **Backups** — Number of dotfile backups in `~/.mimac/backups/`
 - **Shell** — Current login shell (should be Zsh)
 - **PATH** — Whether `~/bin` is on the PATH
 - **Homebrew** — Version installed
 - **Brewfile packages** — Each formula and cask: installed or missing
 
+For problems rather than inventory, use `make doctor`.
+
 ---
 
 # State Files
 
-MiMac writes runtime state to `~/.mimac/` (gitignored):
+MiMac writes runtime state to `~/.mimac/` and `~/.cache/mimac/`:
 
 | File / Directory | Purpose |
 |---|---|
-| `~/.mimac/preferences/` | Local backup of app plists + App Support files |
+| `~/.mimac/preferences/` | Local snapshot of app plists + App Support files |
 | `~/.mimac/backups/` | Timestamped backups of dotfiles that were replaced during setup |
-| `~/.mimac/defaults-rollback.sh` | Shell script to undo all `defaults write` changes |
-| `~/.mimac/hardening-rollback.sh` | Shell script to undo security hardening |
+| `~/.mimac/defaults-rollback.sh` | Undo every `defaults write` MiMac made |
+| `~/.mimac/hardening-rollback.sh` | Undo security hardening |
+| `~/.mimac/services-rollback.sh` | Re-enable services turned off by `trim-services` |
+| `~/.mimac/install.log` | Log of the setup phases |
+| `~/.cache/mimac/last-update-check` | When `check-updates` last looked |
 
-To undo macOS defaults applied by MiMac:
+Each rollback script records the state *before* MiMac's first change, and re-runs never
+overwrite it. To undo macOS defaults:
 
 ```bash
 bash ~/.mimac/defaults-rollback.sh
@@ -511,11 +498,16 @@ bash ~/.mimac/defaults-rollback.sh
 
 | Problem | Solution |
 |---|---|
+| Something is off and you are not sure what | `make doctor` — then `make doctor ARGS=--fix` for the safe repairs |
+| New terminals open slowly | `make doctor` checks the usual cause (insecure completion directories) and times a new shell |
 | `make setup` fails at Xcode CLT | Run `xcode-select --install`, wait for the GUI install dialog to complete, then re-run |
 | Dotfile conflict ("file exists" warning) | Backup auto-created in `~/.mimac/backups/`; resolve manually then re-run |
-| post-install skips plist imports | Preferences aren't available locally in `~/.mimac/preferences` |
-| mimac-picker not rendering | Rebuild the binary: `make picker` |
-| `~/bin` not on PATH | Run `make doctor --fix` — automatically adds `~/bin` to PATH in `.zshrc` |
+| A command in `~/bin` stopped working after `make pull` | `make tools` relinks and removes dead links (`make maintain` does this for you) |
+| `make updates` says it is not installing a macOS version | By design — major upgrades are done by hand in System Settings |
+| topgrade appears to hang | Check `~/.config/topgrade.toml` still links to `assets/topgrade.toml`, which disables the step that suspends it |
+| post-install skips plist imports | No snapshot in `~/.mimac/preferences` yet — run `make snapshot-prefs` on a configured Mac |
+| mimac-picker not rendering | Rebuild: `make build-tools` |
+| `~/bin` not on PATH | `make doctor ARGS=--fix` adds it to `.zshrc` |
 | Brewfile entry shows missing | Package name may differ from formula name; check with `brew info <pkg>` |
 | `make sync` exits with "nothing to add" | All installed packages are already in the Brewfile — nothing to do |
 | `make snapshot-prefs` fails for an app | App is not installed or `defaults export` failed; check the app is running |

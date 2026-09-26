@@ -25,15 +25,6 @@ source "$SCRIPT_DIR/lib.sh"
 
 check_macos
 
-# Prevent concurrent runs
-LOCKFILE="$STATE_DIR/.mimac.lock"
-mkdir -p "$STATE_DIR"
-exec 200>"$LOCKFILE"
-if ! flock -n 200; then
-  err "Another MiMac instance is already running (lock: $LOCKFILE)"
-  exit 1
-fi
-
 # Parse top-level flag
 PHASE=""
 PASSTHROUGH=()
@@ -64,15 +55,36 @@ USAGE
   esac
 done
 
+# Prevent concurrent runs. mkdir, not flock: flock is util-linux and macOS does
+# not ship it, so the old `flock -n` failed on every Mac and this installer
+# refused to start — even for --help, which came after it. mkdir is atomic.
+# A lock left by a crashed run names its PID; if that process is gone, take it.
+LOCKDIR="$STATE_DIR/.mimac.lock.d"
+mkdir -p "$STATE_DIR"
+if ! mkdir "$LOCKDIR" 2>/dev/null; then
+  holder="$(cat "$LOCKDIR/pid" 2>/dev/null || true)"
+  if [[ -n "$holder" ]] && kill -0 "$holder" 2>/dev/null; then
+    err "Another MiMac install is already running (pid $holder, lock: $LOCKDIR)"
+    exit 1
+  fi
+  warn "Removing a stale lock left by pid ${holder:-unknown}"
+  rm -rf "$LOCKDIR"
+  mkdir "$LOCKDIR"
+fi
+echo $$ > "$LOCKDIR/pid"
+trap 'rm -rf "$LOCKDIR"' EXIT
+
+# Phases run as children, not via exec: exec would replace this process and
+# skip the EXIT trap, leaving the lock behind for the next run to call stale.
 case "${PHASE:-setup}" in
   setup)
-    exec "$SCRIPT_DIR/setup" "${PASSTHROUGH[@]+"${PASSTHROUGH[@]}"}"
+    "$SCRIPT_DIR/setup" "${PASSTHROUGH[@]+"${PASSTHROUGH[@]}"}"
     ;;
   brew)
-    exec "$SCRIPT_DIR/brew-packages" "${PASSTHROUGH[@]+"${PASSTHROUGH[@]}"}"
+    "$SCRIPT_DIR/brew-packages" "${PASSTHROUGH[@]+"${PASSTHROUGH[@]}"}"
     ;;
   post)
-    exec "$SCRIPT_DIR/post-install" "${PASSTHROUGH[@]+"${PASSTHROUGH[@]}"}"
+    "$SCRIPT_DIR/post-install" "${PASSTHROUGH[@]+"${PASSTHROUGH[@]}"}"
     ;;
   all)
     log "Running all phases..."
