@@ -206,6 +206,27 @@ make snapshot-prefs
 2. Copies Loopback and SoundSource Application Support files
 3. Saves everything to `~/.mimac/preferences/`, where Phase 3 imports it from
 
+## Keeping a macOS Setting (`defaults-watch`)
+
+A setting changed in System Settings is the one change no MiMac command records. To keep it,
+its key has to go into `scripts/defaults.sh`, and `defaults-watch` finds the key:
+
+```bash
+defaults-watch                # snapshot, change the setting, press Return
+defaults-watch --seconds 20   # wait 20 seconds instead of for Return
+```
+
+It snapshots every preferences domain — yours, the per-Mac (`-currentHost`) ones, and the
+readable files in `/Library/Preferences` — waits while you change one setting, snapshots again,
+and prints each key that changed, with its old and new value. For a key `defaults.sh` already
+writes, it says whether the new value is the one MiMac sets, or which line to change. For any
+other, it prints the `write_default` line to add, in `defaults.sh`'s own form. Window
+positions, timestamps, launch counters and toolbar layouts are listed apart, as probably not
+the setting. It changes nothing.
+
+Not everything in System Settings is a preference: login items, network and account
+settings, and privacy permissions are stored elsewhere, and it says so when nothing changed.
+
 ## Trimming Background Services (`make trim-services`)
 
 Opt-in, and deliberately **not** part of `make all`. Turning a service off is a decision
@@ -452,6 +473,7 @@ Symlinked into `~/bin` by Phase 1.
 | `check-updates` | "MiMac has new commits" prompt at shell start, once per new remote head; runs from `.zshrc` |
 | `clear-app-caches` | Clears the Discord cache directories. Also runs from a LaunchAgent daily at 03:00 |
 | `trim-services` | Same as `make trim-services` |
+| `defaults-watch` | Name the preference key a System Settings change writes, and the `defaults.sh` line that keeps it |
 | `hide_tm.sh` | Hides Time Machine volumes from the Finder sidebar. Volume names as arguments, or set `TM_VOLUMES` |
 
 > `scripts/lib.sh` and `bin/lib/common.sh` are sourced libraries, not commands. They are
