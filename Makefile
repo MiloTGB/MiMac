@@ -2,8 +2,16 @@ SHELL := $(shell command -v bash)
 REPO_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 SCRIPTS := $(REPO_ROOT)/scripts
 BIN_DIR   := $(REPO_ROOT)/bin
+INSTALL_BIN := $(HOME)/bin
 
-.PHONY: trim-services all install fix-exec setup brew post-install tools dotfiles defaults trackpad uninstall nuke update updates pull maintain check tidy harden status doctor dock sync sync-commit sync-prune sync-clean sync-login-items setup-dry nuke-execute picker mimac-status build-tools manual help snapshot-prefs
+# The checkout ~/bin serves. A build anywhere else — a clone, a worktree, a
+# scratch copy — builds without linking, so testing a copy cannot repoint
+# ~/bin/status at it, to dangle once the copy is deleted. Compared as resolved
+# paths, so a repo under a symlink still counts.
+MIMAC_HOME := $(HOME)/MiMac
+serves-home = [ "$$(cd "$(MIMAC_HOME)" 2>/dev/null && pwd -P)" = "$$(cd "$(REPO_ROOT)" && pwd -P)" ]
+
+.PHONY: trim-services all install fix-exec setup brew post-install tools dotfiles defaults trackpad uninstall nuke update updates pull maintain check test tidy harden status doctor dock sync sync-commit sync-prune sync-clean sync-login-items setup-dry nuke-execute picker mimac-status build-tools manual help snapshot-prefs
 
 # Build a Go tool: $(call go-build,<binary>,<tool-dir>)
 define go-build
@@ -14,6 +22,18 @@ define go-build
 	@printf '  \033[36m▸\033[0m Building $(1)…\n'
 	@cd "$(REPO_ROOT)/tools/$(2)" && go build -o "$(BIN_DIR)/$(1)" .
 	@chmod +x "$(BIN_DIR)/$(1)"
+endef
+
+# Link a built binary into ~/bin: $(call link-home-bin,<binary>,<link names>)
+# Only from the checkout ~/bin serves (serves-home above).
+define link-home-bin
+	@if $(serves-home); then \
+		mkdir -p "$(INSTALL_BIN)" && \
+		for n in $(2); do ln -sf "$(BIN_DIR)/$(1)" "$(INSTALL_BIN)/$$n" || exit 1; done && \
+		printf '  \033[32m✓\033[0m $(1) → $(patsubst %,~/bin/%,$(2))\n'; \
+	else \
+		printf '  \033[33m⚠\033[0m $(1) built, not linked: ~/bin serves $(MIMAC_HOME), not this checkout\n'; \
+	fi
 endef
 
 help: ## Show available make commands
@@ -75,17 +95,57 @@ nuke: ## Complete MiMac removal (dry-run preview, use nuke-execute to actually r
 nuke-execute: ## DESTRUCTIVE: Execute complete MiMac removal (requires confirmation)
 	@"$(SCRIPTS)/nuke-mimac" --execute
 
-update: ## Upgrade all packages (topgrade or brew)
-	@if command -v topgrade >/dev/null 2>&1; then topgrade; else brew update && brew upgrade; fi
+# run_topgrade (lib.sh) ends the run by saying what topgrade's exit status
+# means: when a step failed, that every step ran, and which ones failed. A run
+# with one failed cask otherwise ended on "make: *** [update] Error 1" and
+# nothing else, which reads as though it had stopped there.
+update: ## Upgrade all packages (topgrade or brew), and say which steps failed
+	@. "$(SCRIPTS)/lib.sh" && if command -v topgrade >/dev/null 2>&1; then run_topgrade; else brew update && brew upgrade; fi
 
 updates: ## Install macOS updates for this version — never a major upgrade (ARGS=-n to preview)
 	@"$(BIN_DIR)/macos-updates" $(ARGS)
 
-pull: ## Fast-forward MiMac to origin (git pull --ff-only)
-	@git -C "$(REPO_ROOT)" pull --ff-only
+# pull fast-forwards, then brings the install up to the commits it pulled. A
+# plain fast-forward left the old Go binaries in ~/bin after a change to tools/,
+# a new script off the PATH, and a new dotfile unlinked, each until the
+# matching make target was run by hand — and check-updates' "yes" runs only
+# this. Each step runs only when the pulled range touched what it serves:
+#   tools/             make build-tools
+#   scripts/ or bin/   fix-exec, then setup --only tools
+#   dotfiles/          setup --only dotfiles
+# Relinking only from the checkout ~/bin serves; anywhere else it is skipped.
+# PULL_BUILD=0 skips the rebuild: maintain passes it, because it rebuilds after
+# its package updates, which can bring a new Go.
+pull: ## Fast-forward MiMac to origin, then rebuild and relink what the pulled commits changed
+	@old=$$(git -C "$(REPO_ROOT)" rev-parse HEAD) || exit 1; \
+	git -C "$(REPO_ROOT)" pull --ff-only || exit 1; \
+	new=$$(git -C "$(REPO_ROOT)" rev-parse HEAD) || exit 1; \
+	[ "$$old" != "$$new" ] || exit 0; \
+	changed=$$(git -C "$(REPO_ROOT)" diff --name-only "$$old" "$$new"); \
+	touched() { printf '%s\n' "$$changed" | grep -Eq "$$1"; }; \
+	home=1; $(serves-home) || home=0; \
+	rc=0; \
+	if touched '^tools/'; then \
+		if [ "$(PULL_BUILD)" = 0 ]; then \
+			printf '  \033[2mtools/ changed; rebuild skipped (PULL_BUILD=0)\033[0m\n'; \
+		else \
+			$(MAKE) --no-print-directory -C "$(REPO_ROOT)" build-tools || rc=1; \
+		fi; \
+	fi; \
+	if touched '^(scripts|bin|dotfiles)/' && [ "$$home" = 0 ]; then \
+		printf '  \033[33m⚠\033[0m not relinked: ~/bin and the dotfiles serve $(MIMAC_HOME), not this checkout\n'; \
+	else \
+		if touched '^(scripts|bin)/'; then \
+			"$(SCRIPTS)/fix-exec" >/dev/null && "$(SCRIPTS)/setup" --only tools || rc=1; \
+		fi; \
+		if touched '^dotfiles/'; then \
+			"$(SCRIPTS)/setup" --only dotfiles || rc=1; \
+		fi; \
+	fi; \
+	exit $$rc
 
 maintain: ## Weekly upkeep: pull, relink, update packages + macOS, rebuild TUIs, doctor
-	-@$(MAKE) --no-print-directory pull
+	-@$(MAKE) --no-print-directory pull PULL_BUILD=0
 	-@$(MAKE) --no-print-directory tools
 	-@$(MAKE) --no-print-directory update
 	-@$(MAKE) --no-print-directory updates
@@ -107,15 +167,26 @@ doctor: ## Find what is broken or drifting on this Mac (ARGS=--fix to repair the
 	@# (and "Error 2" through ~/Makefile) made a report read like a crash.
 	@"$(SCRIPTS)/doctor" $(ARGS) || true
 
-check: ## Lint the repo: shellcheck every script, go vet every TUI
+check: ## Lint the repo (shellcheck, gofmt, go vet), then run go test and the tests in tests/
 	@command -v shellcheck >/dev/null 2>&1 || { echo "error: shellcheck is not installed. Install it with: brew install shellcheck"; exit 1; }
 	@printf '  \033[36m▸\033[0m shellcheck\n'
-	@shellcheck $$(grep -lE '^#!.*(ba)?sh' $(SCRIPTS)/* $(BIN_DIR)/* $(BIN_DIR)/lib/*.sh $(REPO_ROOT)/assets/preferences/*.sh 2>/dev/null)
+	@shellcheck $$(grep -lE '^#!.*(ba)?sh' $(SCRIPTS)/* $(BIN_DIR)/* $(BIN_DIR)/lib/*.sh $(REPO_ROOT)/assets/preferences/*.sh $(REPO_ROOT)/tests/*.sh 2>/dev/null)
 	@for d in picker mimac-status theme; do \
-		printf '  \033[36m▸\033[0m go vet tools/%s\n' "$$d"; \
-		(cd "$(REPO_ROOT)/tools/$$d" && go vet ./...) || exit 1; \
+		printf '  \033[36m▸\033[0m gofmt, go vet, go test tools/%s\n' "$$d"; \
+		unformatted=$$(cd "$(REPO_ROOT)/tools/$$d" && gofmt -l .); \
+		[ -z "$$unformatted" ] || { echo "not gofmt-clean in tools/$$d: $$unformatted"; exit 1; }; \
+		(cd "$(REPO_ROOT)/tools/$$d" && go vet ./... && go test ./...) || exit 1; \
 	done
+	@$(MAKE) --no-print-directory test
 	@printf '  \033[32m✓\033[0m all checks passed\n'
+
+# Each test runs under a throwaway HOME, with stubs for anything that would
+# reach the network, this Mac's settings or ~/bin. None needs sudo.
+test: ## Run the tests in tests/ (make check runs them too)
+	@rc=0; for t in "$(REPO_ROOT)"/tests/*.sh; do \
+		printf '  \033[36m▸\033[0m tests/%s\n' "$${t##*/}"; \
+		bash "$$t" || rc=1; \
+	done; exit $$rc
 
 tidy: ## Run go mod tidy in every tool directory (builds no longer do this)
 	@for d in picker mimac-status theme; do \
@@ -150,16 +221,11 @@ build-tools: ## Build all Go TUI binaries (requires Go)
 
 picker: ## Build the mimac-picker TUI binary
 	$(call go-build,mimac-picker,picker)
-	@mkdir -p "$(HOME)/bin"
-	@ln -sf "$(BIN_DIR)/mimac-picker" "$(HOME)/bin/mimac-picker"
-	@printf '  \033[32m✓\033[0m mimac-picker → ~/bin/mimac-picker\n'
+	$(call link-home-bin,mimac-picker,mimac-picker)
 
 mimac-status: ## Build the mimac-status health dashboard TUI binary
 	$(call go-build,mimac-status,mimac-status)
-	@mkdir -p "$(HOME)/bin"
-	@ln -sf "$(BIN_DIR)/mimac-status" "$(HOME)/bin/mimac-status"
-	@ln -sf "$(BIN_DIR)/mimac-status" "$(HOME)/bin/status"
-	@printf '  \033[32m✓\033[0m mimac-status → ~/bin/mimac-status\n'
+	$(call link-home-bin,mimac-status,mimac-status status)
 
 manual: ## Regenerate docs/index.html from docs/manual.md (requires pandoc)
 	@if ! command -v pandoc >/dev/null 2>&1; then \

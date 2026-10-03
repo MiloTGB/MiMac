@@ -237,52 +237,37 @@ func checkHardening(stateDir string) checkResult {
 	}
 }
 
-func checkBackups(stateDir string) checkResult {
-	name := "Backups"
-	backupDir := filepath.Join(stateDir, "backup")
-
-	info, err := os.Stat(backupDir)
-	if err != nil || !info.IsDir() {
-		return checkResult{
-			name:    name,
-			sev:     sevWarn,
-			summary: "No backup directory",
-			detail:  fmt.Sprintf("Expected: %s", backupDir),
-			fix:     "Backups are created automatically during setup",
-		}
-	}
-
+// checkBackups reports what setup displaced, not the health of anything, so
+// it is shown only when there is something to report. It read
+// ~/.mimac/backup, which nothing writes — setup writes ~/.mimac/backups — so
+// the dashboard showed "No backup directory" as a warning on every Mac. An
+// empty directory, which setup used to leave on every relink, is not a backup.
+func checkBackups(stateDir string) (checkResult, bool) {
+	backupDir := filepath.Join(stateDir, "backups")
 	entries, err := os.ReadDir(backupDir)
 	if err != nil {
-		return checkResult{
-			name:    name,
-			sev:     sevFail,
-			summary: "Cannot read backup/",
-			detail:  err.Error(),
-		}
+		return checkResult{}, false
 	}
-
-	if len(entries) == 0 {
-		return checkResult{
-			name:    name,
-			sev:     sevOK,
-			summary: "Backup dir exists (empty)",
-			detail:  "No backed-up files (clean install)",
-		}
-	}
-
-	var files []string
+	var dirs []string
 	for _, e := range entries {
-		files = append(files, e.Name())
+		if !e.IsDir() {
+			continue
+		}
+		inner, err := os.ReadDir(filepath.Join(backupDir, e.Name()))
+		if err == nil && len(inner) > 0 {
+			dirs = append(dirs, e.Name())
+		}
 	}
-	sort.Strings(files)
-
+	if len(dirs) == 0 {
+		return checkResult{}, false
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(dirs)))
 	return checkResult{
-		name:    name,
+		name:    "Backups",
 		sev:     sevOK,
-		summary: fmt.Sprintf("%d backup(s)", len(files)),
-		detail:  "Files: " + strings.Join(files, ", "),
-	}
+		summary: fmt.Sprintf("%d backup(s)", len(dirs)),
+		detail:  "Latest:   " + dirs[0] + "\nLocation: " + backupDir,
+	}, true
 }
 
 func checkShell() checkResult {
@@ -460,26 +445,27 @@ func runChecks() []checkResult {
 	repoRoot := filepath.Join(home, "MiMac")
 	binDir := filepath.Join(home, "bin")
 
-	return []checkResult{
+	checks := []checkResult{
 		checkHomebrew(),
 		checkBrewfile(repoRoot),
 		checkDotfiles(repoRoot, home),
 		checkTools(repoRoot, binDir),
 		checkDefaults(stateDir),
 		checkHardening(stateDir),
-		checkBackups(stateDir),
-		checkShell(),
-		checkPATH(binDir),
 	}
+	if c, ok := checkBackups(stateDir); ok {
+		checks = append(checks, c)
+	}
+	return append(checks, checkShell(), checkPATH(binDir))
 }
 
 // ── Model ────────────────────────────────────────────────────────────────────
 
 type model struct {
-	checks  []checkResult
-	cursor  int
-	width   int
-	height  int
+	checks []checkResult
+	cursor int
+	width  int
+	height int
 }
 
 func newModel(checks []checkResult) model {
@@ -701,7 +687,7 @@ The dashboard checks:
   • Tools directory
   • macOS defaults (stamps)
   • Security hardening
-  • Backups
+  • Backups (only when setup has backed something up)
   • Shell configuration
   • PATH configuration
 

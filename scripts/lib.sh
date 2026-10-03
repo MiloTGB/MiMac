@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # lib.sh — shared helpers for MiMac scripts
 # Source this file; do not execute directly.
+# Scope: the scripts in scripts/, and the Makefile's update recipe. Standalone
+# bin/ tools use bin/lib/common.sh. Both define ok, warn, err and info, so a
+# function here whose lines must stay together on one stream prints with
+# printf, as topgrade_verdict does.
 
 [[ -n "${_LIB_SH_LOADED:-}" ]] && return 0
 _LIB_SH_LOADED=1
@@ -87,6 +91,118 @@ mimac_skip_link() {
 }
 
 mimac_mktemp()   { mktemp    "${TMPDIR:-/tmp}/mimac.XXXXXX"; }
+mimac_mktemp_d() { mktemp -d "${TMPDIR:-/tmp}/mimac.XXXXXX"; }
+
+# topgrade_verdict RC LOG — say what topgrade's exit status RC means, from the
+# Summary it printed into LOG, a recording of the run.
+#
+# topgrade exits 1 when any step failed, and with no_retry and assume_yes, as
+# assets/topgrade.toml sets them, it runs every step first and stops for none.
+# So a run that upgraded everything but one cask ended on a bare
+# "make: *** [update] Error 1", which reads as though the run broke off there.
+# topgrade prints its Summary only once every step has run, so the Summary is
+# the evidence: with it, this names the steps that failed and says the rest
+# ran; without it, it says the run stopped short, and never that everything
+# ran. Ported from mrk, where a 404 on one cask download did exactly this.
+#
+# topgrade draws a step's header two ways: "── 20:04:24 - Summary ────" at a
+# terminal, in U+2500, and "―― 20:04:24 - Summary ――" away from one, in
+# U+2015. Both are read. A command after the Summary that fails is not in it:
+# topgrade runs the ones after it and exits 1, which is the "though its
+# summary shows" case below.
+#
+# Every line goes to stderr through printf, in this file's own marks, and not
+# through warn and info, so the verdict reads the same whichever library a
+# caller sourced last (bin/lib/common.sh defines both too).
+topgrade_verdict() {
+  local rc=$1 log=$2 found n=0 failed=0 after=0 names="" cleanup=""
+  local _w="${_YLW}  ⚠${_R}" _g="${_GRN}  ✓${_R}" _i="   "
+  # Strip colour codes, and the window title topgrade sets before each header,
+  # which shares the header's line when the terminal reports no width.
+  #
+  # In the C locale, set for this pipeline alone: the recording is read as
+  # bytes. It holds the output of every package manager topgrade ran, and in a
+  # UTF-8 locale macOS's sed, tr and awk each stop at the first byte that is not
+  # UTF-8 — one Latin-1 file name in a download line is enough — so the Summary
+  # below it was never seen. The header patterns are byte strings and match the
+  # same in the C locale.
+  found=$(export LC_ALL=C; sed -e $'s/\x1b\\[[0-9;?]*[A-Za-z]//g' -e $'s/\x1b][^\x07]*\x07//g' "$log" 2>/dev/null | tr -d '\r' | awk '
+    /^(──|――) (.* - )?Summary (─|―)/ { insum = 1; seen = 1; n = 0; f = 0; post = 0; names = ""; next }
+    insum && /^(──|――) /    { insum = 0 }
+    insum && /: OK$/        { n++; next }
+    insum && /: FAILED$/    { n++; f++; sub(/: FAILED$/, ""); names = names (names == "" ? "" : ", ") $0; next }
+    seen && !insum && /^(──|――) / { post++ }
+    END { if (seen) printf "%d\t%d\t%d\t%s\n", n, f, post, names }')
+  if [[ -z "$found" ]]; then
+    if (( rc != 0 )); then
+      printf '%s %s\n' "$_w" "topgrade stopped before its summary (exit $rc): not every step ran. Its last output is above." >&2
+    fi
+    return 0
+  fi
+  IFS=$'\t' read -r n failed after names <<< "$found"
+  if (( failed > 0 )); then
+    printf '%s %s\n' "$_w" "Update finished: every step ran. $failed of $n failed: $names." >&2
+    if (( after == 1 )); then
+      cleanup=", and the clean-up command after them ran"
+    elif (( after > 1 )); then
+      cleanup=", and the $after clean-up commands after them ran"
+    fi
+    printf '%s %s\n' "$_i" "Nothing was interrupted: the other $(( n - failed )) succeeded$cleanup." >&2
+    # make sets MAKELEVEL for a recipe: only there does an "Error" line follow.
+    if [[ -n "${MAKELEVEL:-}" ]]; then
+      printf '%s %s\n' "$_i" "The exit status is $rc for the failed step alone, which make reports next as \"Error $rc\"." >&2
+    else
+      printf '%s %s\n' "$_i" "The exit status is $rc for the failed step alone." >&2
+    fi
+  elif (( rc != 0 )); then
+    printf '%s %s\n' "$_w" "topgrade exited $rc, though its summary shows no failed step: a command after the summary failed. See above." >&2
+  elif (( n == 1 )); then
+    printf '%s %s\n' "$_g" "Update finished: its one step succeeded." >&2
+  else
+    printf '%s %s\n' "$_g" "Update finished: all $n steps succeeded." >&2
+  fi
+}
+
+# run_topgrade [ARGS...] — run topgrade, then say what its exit status means
+# (topgrade_verdict). Returns topgrade's status. make update runs it.
+#
+# At a terminal the run is recorded through script(1), which gives topgrade a
+# terminal of its own, so its colours, progress bars and sudo prompt are as
+# they were; script returns the command's status. Without a terminal it is a
+# plain tee. The recording is removed afterwards.
+#
+# It is removed on INT, TERM and HUP too: otherwise a run interrupted away from
+# a terminal (`make update | tee log`, then Ctrl-C) left its output so far in
+# $TMPDIR. The trap removes the file, puts the caller's traps back, and sends
+# the signal again, so the shell still ends as the signal ends it, or as the
+# caller's own trap decides. At a terminal Ctrl-C reaches topgrade through
+# script, and the run ends by the last lines here.
+run_topgrade() {
+  local log rc=0 saved sig
+  if ! log=$(mimac_mktemp); then
+    topgrade "$@"
+    return
+  fi
+  saved=$(trap -p INT TERM HUP)
+  for sig in INT TERM HUP; do
+    # shellcheck disable=SC2064  # the path, the traps and the signal as they are now
+    trap "rm -f $(printf '%q' "$log")
+trap - INT TERM HUP
+$saved
+kill -s $sig \$\$" "$sig"
+  done
+  if [[ -t 0 && -t 1 && "$(uname -s)" == Darwin ]] && command -v script >/dev/null 2>&1; then
+    script -q "$log" topgrade "$@" || rc=$?
+  else
+    topgrade "$@" 2>&1 | tee "$log"
+    rc=${PIPESTATUS[0]}
+  fi
+  topgrade_verdict "$rc" "$log"
+  rm -f "$log"
+  trap - INT TERM HUP
+  eval "$saved"
+  return "$rc"
+}
 
 # Ensure DRY_RUN is defined (default 0 if not set by caller)
 : "${DRY_RUN:=0}"

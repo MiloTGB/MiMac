@@ -1,7 +1,7 @@
 # ==============================================================================
 #  .zshrc — Sourced for INTERACTIVE shells
 #  Maintainer: milothegalaxyboy
-#  Rev: 2026-09-25
+#  Rev: 2026-10-03
 # ==============================================================================
 
 # --- Oh My Zsh (OMZ) Configuration ---
@@ -77,8 +77,10 @@ if [[ -n "$_nvm_source" ]] && ! typeset -f nvm >/dev/null; then
   npx()  { _nvm_lazy_load npx "$@"; }
 fi
 
-# --- MiMac Update Check (weekly) ---
-[[ -x "$HOME/bin/check-updates" ]] && "$HOME/bin/check-updates"
+# --- MiMac Update Check (every shell; fetches at most daily) ---
+# `|| true`: a pull that a yes started and that failed is reported by
+# check-updates itself, and its status must not become the prompt's.
+[[ -x "$HOME/bin/check-updates" ]] && "$HOME/bin/check-updates" || true
 
 # --- Shell Welcome ---
 [[ -o login ]] && command -v fastfetch >/dev/null 2>&1 && fastfetch

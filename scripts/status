@@ -131,12 +131,15 @@ echo ""
 
 echo "Backups:"
 if [[ -d "$STATE_DIR/backups" ]]; then
-  backup_count=$(find "$STATE_DIR/backups" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
+  # Only directories with something in them: setup used to leave an empty one
+  # on every relink, and each was counted as a backup.
+  backups=$(find "$STATE_DIR/backups" -mindepth 1 -maxdepth 1 -type d ! -empty 2>/dev/null | sort -r)
+  backup_count=$(printf '%s' "$backups" | grep -c . || true)
   if (( backup_count > 0 )); then
     ok "  $backup_count backup(s) found"
     info "  Location: $STATE_DIR/backups"
     # Show most recent
-    latest=$(find "$STATE_DIR/backups" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -r | head -n1)
+    latest=$(printf '%s\n' "$backups" | head -n1)
     if [[ -n "$latest" ]]; then
       info "  Latest: $(basename "$latest")"
     fi

@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <meta charset="utf-8" />
-  <meta name="generator" content="pandoc 3.10.2" />
+  <meta name="generator" content="pandoc 3.11" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <title>MiMac — Daily Driver Manual</title>
   <style>
@@ -23,7 +23,6 @@ width: 0.8em;
 margin: 0 0.8em 0.2em -1.6em;
 vertical-align: middle;
 }
-.display.math{display: block; text-align: center; margin: 0.5rem auto;}
 
 html { -webkit-text-size-adjust: 100%; }
 pre > code.sourceCode { white-space: pre; position: relative; }
@@ -393,8 +392,8 @@ setup</p>
 (<code>make updates</code>)</a></li>
 <li><a href="#update-notices-check-updates" id="toc-update-notices-check-updates">Update Notices
 (<code>check-updates</code>)</a></li>
-<li><a href="#linting-the-repo-make-check" id="toc-linting-the-repo-make-check">Linting the Repo
-(<code>make check</code>)</a></li>
+<li><a href="#linting-and-testing-the-repo-make-check" id="toc-linting-and-testing-the-repo-make-check">Linting and Testing the
+Repo (<code>make check</code>)</a></li>
 </ul></li>
 <li><a href="#day-to-day-workflow" id="toc-day-to-day-workflow">Day-to-Day Workflow</a>
 <ul>
@@ -510,7 +509,8 @@ safe items</td>
 <tr>
 <td><code>make update</code></td>
 <td>Any time</td>
-<td>Upgrade every package via topgrade</td>
+<td>Upgrade every package via topgrade, then say which steps failed and
+that the rest ran</td>
 </tr>
 <tr>
 <td><code>make updates</code></td>
@@ -531,7 +531,8 @@ version</td>
 </tbody>
 </table>
 <p>Every one of these works from <code>~/</code> as well —
-<code>~/Makefile</code> forwards them to the repo.</p>
+<code>~/Makefile</code> forwards them to the repo, and every other
+target too.</p>
 <h2 id="the-weekly-routine-make-maintain">The Weekly Routine
 (<code>make maintain</code>)</h2>
 <div class="sourceCode" id="cb1"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> maintain</span></code></pre></div>
@@ -539,10 +540,12 @@ version</td>
 <code>doctor</code> always gets the last word:</p>
 <ol type="1">
 <li><code>make pull</code> — fast-forward MiMac to origin
-(<code>git pull --ff-only</code>; a diverged repo is left alone)</li>
+(<code>git pull --ff-only</code>; a diverged repo is left alone), and
+relink what the pulled commits changed. The rebuild waits for step 5
+(<code>PULL_BUILD=0</code>), because step 3 can bring a new Go</li>
 <li><code>make tools</code> — link any new commands into
 <code>~/bin</code>, and remove links to ones that were deleted</li>
-<li><code>make update</code> — topgrade</li>
+<li><code>make update</code> — topgrade, and its verdict (below)</li>
 <li><code>make updates</code> — macOS updates for the installed
 version</li>
 <li><code>make build-tools</code> — rebuild the Go TUIs (about a second
@@ -664,6 +667,22 @@ topgrade run</td>
 </tr>
 </tbody>
 </table>
+<p>topgrade runs every step even when one fails, then exits 1. Alone,
+that ended the run on <code>make: *** [update] Error 1</code>, which
+reads as though it broke off. So <code>make update</code> ends by
+reading topgrade’s Summary and saying what the status means:</p>
+<ul>
+<li><em>“Update finished: every step ran. 1 of 8 failed: Brew Cask
+(ARM).”</em> — only that step failed; the rest succeeded, and make’s
+<code>Error 1</code> that follows is for that step alone.</li>
+<li><em>“topgrade stopped before its summary … not every step ran.”</em>
+— the run really did stop short; its last output is above.</li>
+<li><em>“Update finished: all 8 steps succeeded.”</em></li>
+</ul>
+<p>The run is recorded through <code>script(1)</code> at a terminal (so
+topgrade’s colours and its sudo prompt are unchanged) and through
+<code>tee</code> otherwise. The recording is deleted afterwards, and on
+Ctrl-C.</p>
 <h2 id="macos-updates-make-updates">macOS Updates
 (<code>make updates</code>)</h2>
 <div class="sourceCode" id="cb3"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> updates ARGS=-n   <span class="co"># Preview: what would install, what is left alone</span></span>
@@ -681,15 +700,31 @@ after the command exited. If the list cannot be parsed, nothing is
 installed.</p>
 <h2 id="update-notices-check-updates">Update Notices
 (<code>check-updates</code>)</h2>
-<p>Runs from <code>.zshrc</code>, at most once a week. When the repo has
-new commits on origin it asks <em>“MiMac updates available. Pull them
-now?”</em> and runs <code>make pull</code>. It never blocks shell
-startup on the network: it compares against the last fetched state and
-refreshes it with a background <code>git fetch</code> for next time.</p>
-<h2 id="linting-the-repo-make-check">Linting the Repo
-(<code>make check</code>)</h2>
-<div class="sourceCode" id="cb4"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> check    <span class="co"># shellcheck every script, go vet every TUI</span></span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> tidy     <span class="co"># go mod tidy in every tool — builds no longer do this themselves</span></span></code></pre></div>
+<p>Runs from <code>.zshrc</code> at every new shell. When the checkout
+is behind origin it asks <em>“MiMac: 2 new commits on origin/main.
+Update now? [y/N]”</em>, and a yes runs <code>make pull</code>, which
+also rebuilds and relinks what the commits changed. It asks once for
+each new remote head: answer no and it stays quiet until origin moves
+again. A yes whose pull fails is not an answer, so the next shell asks
+again. It says nothing on a branch other than <code>main</code>, or when
+the checkout has commits origin lacks.</p>
+<p>It never blocks shell startup on the network. The compare reads the
+last fetched state, and a background <code>git fetch</code>, at most
+once a day, refreshes it for the next shell. It used to run the whole
+check once a week, so a commit pushed the day after a check waited up to
+a week.</p>
+<h2 id="linting-and-testing-the-repo-make-check">Linting and Testing the
+Repo (<code>make check</code>)</h2>
+<div class="sourceCode" id="cb4"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> check    <span class="co"># shellcheck, gofmt and go vet; then go test and every test in tests/</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> test     <span class="co"># only the tests in tests/</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> tidy     <span class="co"># go mod tidy in every tool — builds no longer do this themselves</span></span></code></pre></div>
+<p>Each test in <code>tests/</code> runs under a throwaway
+<code>HOME</code>, with stubs for anything that would reach the network,
+this Mac’s settings or the real <code>~/bin</code>, so none needs sudo
+or changes anything. They hold the behaviour of
+<code>make update</code>’s verdict, <code>check-updates</code>,
+<code>make pull</code>, <code>~/Makefile</code> and setup’s dotfile
+backups.</p>
 <hr />
 <h1 id="day-to-day-workflow">Day-to-Day Workflow</h1>
 <h2 id="keeping-the-brewfile-current-make-sync">Keeping the Brewfile
@@ -750,6 +785,11 @@ override database rather than to the job’s plist — and that is what
 makes the Apple ones possible at all: their plists live under
 <code>/System/Library/LaunchAgents</code> where SIP forbids edits, but
 the override database is writable and survives a reboot.</p>
+<p><code>trim-services</code> reads that database back
+(<code>launchctl print-disabled</code>): a job already disabled is
+reported as such and left alone, and a disable that
+<code>launchctl</code> accepted but launchd does not list is reported as
+a failure, not a success.</p>
 <table>
 <colgroup>
 <col style="width: 33%" />
@@ -787,6 +827,13 @@ here, and the only one with a real feature cost</td>
 <p>Every disable is appended to
 <code>~/.mimac/services-rollback.sh</code>, in the same shape as the
 defaults and hardening rollbacks.</p>
+<blockquote>
+<p><strong>Check the Photos agents after a restart.</strong> On macOS
+26.7, mrk found both running again a minute after a restart, though
+launchd still listed them as disabled: it starts each one for any
+process that asks. Not yet checked on macOS 15. After the next restart,
+<code>pgrep -l analysisd</code> shows whether the disable held.</p>
+</blockquote>
 <p>One honest limitation in the output: SIP refuses
 <code>launchctl bootout</code> on a running Apple agent, so for those
 the override lands but the process keeps running until the next login.
@@ -1025,7 +1072,8 @@ Plugins, Safari settings (sandboxed since Sequoia), and signing in to
 (<code>~/Makefile</code>)</h2>
 <p><code>~/Makefile</code> is linked by Phase 1. <code>make help</code>
 from <code>~/</code> lists these first, then everything from
-<code>~/MiMac/</code>.</p>
+<code>~/MiMac/</code>. Any other target is forwarded to
+<code>~/MiMac</code> too, with its <code>ARGS</code>.</p>
 <table>
 <colgroup>
 <col style="width: 50%" />
@@ -1067,7 +1115,8 @@ preview)</td>
 </tr>
 <tr>
 <td><code>make pull</code></td>
-<td>Fast-forward MiMac to origin</td>
+<td>Fast-forward MiMac to origin, then rebuild and relink what the
+pulled commits changed</td>
 </tr>
 <tr>
 <td><code>make snapshot-prefs</code></td>
@@ -1144,7 +1193,12 @@ preview)</td>
 </tr>
 <tr>
 <td><code>make check</code></td>
-<td>shellcheck every script, <code>go vet</code> every TUI</td>
+<td>shellcheck, gofmt, <code>go vet</code>, then <code>go test</code>
+and the tests in <code>tests/</code></td>
+</tr>
+<tr>
+<td><code>make test</code></td>
+<td>Only the tests in <code>tests/</code></td>
 </tr>
 <tr>
 <td><code>make tidy</code></td>
@@ -1197,8 +1251,8 @@ preview)</td>
 </tr>
 <tr>
 <td><code>check-updates</code></td>
-<td>Weekly “MiMac has new commits” prompt; runs from
-<code>.zshrc</code></td>
+<td>“MiMac has new commits” prompt at shell start, once per new remote
+head; runs from <code>.zshrc</code></td>
 </tr>
 <tr>
 <td><code>clear-app-caches</code></td>
@@ -1233,7 +1287,8 @@ Checks</h1>
 <li><strong>macOS Defaults</strong> — Whether defaults have been applied
 (rollback script present)</li>
 <li><strong>Backups</strong> — Number of dotfile backups in
-<code>~/.mimac/backups/</code></li>
+<code>~/.mimac/backups/</code> (the <code>status</code> dashboard shows
+this only when there is one)</li>
 <li><strong>Shell</strong> — Current login shell (should be Zsh)</li>
 <li><strong>PATH</strong> — Whether <code>~/bin</code> is on the
 PATH</li>
@@ -1264,7 +1319,8 @@ installed or missing</li>
 </tr>
 <tr>
 <td><code>~/.mimac/backups/</code></td>
-<td>Timestamped backups of dotfiles that were replaced during setup</td>
+<td>Timestamped backups of whatever setup replaced with a dotfile link:
+a file, a directory, or a link pointing elsewhere</td>
 </tr>
 <tr>
 <td><code>~/.mimac/defaults-rollback.sh</code></td>
@@ -1284,7 +1340,11 @@ installed or missing</li>
 </tr>
 <tr>
 <td><code>~/.cache/mimac/last-update-check</code></td>
-<td>When <code>check-updates</code> last looked</td>
+<td>When <code>check-updates</code> last started a background fetch</td>
+</tr>
+<tr>
+<td><code>~/.cache/mimac/asked-&lt;sha&gt;</code></td>
+<td>The remote head <code>check-updates</code> last asked about</td>
 </tr>
 </tbody>
 </table>
@@ -1326,10 +1386,15 @@ dialog to complete, then re-run</td>
 manually then re-run</td>
 </tr>
 <tr>
-<td>A command in <code>~/bin</code> stopped working after
-<code>make pull</code></td>
-<td><code>make tools</code> relinks and removes dead links
-(<code>make maintain</code> does this for you)</td>
+<td>A command in <code>~/bin</code> stopped working after a pull</td>
+<td><code>make pull</code> relinks what it pulled; for a pull made with
+plain <code>git</code>, <code>make tools</code> relinks and removes dead
+links</td>
+</tr>
+<tr>
+<td><code>make update</code> ends in <code>Error 1</code></td>
+<td>Read the line above it: it names the step that failed, and says
+whether the rest ran</td>
 </tr>
 <tr>
 <td><code>make updates</code> says it is not installing a macOS

@@ -12,12 +12,15 @@ Everything is idempotent — run any command as often as you like.
 |---------|------|--------------|
 | `make maintain` | Weekly | Pull MiMac, relink tools, update packages and macOS, rebuild the TUIs, then `doctor` |
 | `make doctor` | When something feels off | Find what is broken or drifting — see below. `ARGS=--fix` repairs the safe items |
-| `make update` | Any time | Upgrade every package (topgrade: Homebrew, casks, oh-my-zsh, pipx, gh extensions) |
+| `make update` | Any time | Upgrade every package (topgrade: Homebrew, casks, oh-my-zsh, pipx, gh extensions), then say which steps failed and that the rest ran |
 | `make updates` | Any time | Install macOS updates for this version. **Never a major upgrade** — `ARGS=-n` to preview |
 | `make sync` | After installing or removing apps | Pick which new Homebrew packages go into the Brewfile |
 | `status` | Any time | Health dashboard TUI (`make status` for the plain-text version) |
 
-All of these also work from `~` — `~/Makefile` forwards them to the repo.
+All of these, and every other target, also work from `~` — `~/Makefile` forwards them to the repo.
+
+New shells say when origin has commits this checkout lacks (`check-updates`, once per new
+remote head); a yes runs `make pull`, which also rebuilds and relinks what those commits changed.
 
 ### What `make doctor` checks
 
@@ -40,16 +43,17 @@ permissions, old-hostname completion caches, `~/bin` links, stale TUI binaries).
 |--------|-------------|
 | `make maintain` | Weekly upkeep: pull, relink, update, macOS updates, rebuild TUIs, doctor |
 | `make doctor` | Health check (`ARGS=--fix` to repair the safe items) |
-| `make update` | Update via topgrade (or brew) |
+| `make update` | Update via topgrade (or brew), ending on which steps failed and that the rest ran |
 | `make updates` | macOS updates for the installed version only (`ARGS=-n` to preview) |
-| `make pull` | Fast-forward MiMac to origin |
+| `make pull` | Fast-forward MiMac to origin, then rebuild and relink what the pulled commits changed |
 | `make sync` | Snapshot installed Homebrew packages into the Brewfile |
 | `make status` | Show installation status |
 | `make snapshot-prefs` | Export app preferences to `~/.mimac/preferences` |
 | `make trim-services` | Disable background launchd agents this Mac does not need (`ARGS=-n` to preview) |
 | `make harden` | Security hardening (Touch ID sudo via `sudo_local`, screen lock, firewall) |
 | `make build-tools` | Build the Go TUIs: `mimac-picker`, `mimac-status` |
-| `make check` | Lint the repo: shellcheck every script, `go vet` every TUI |
+| `make check` | Lint the repo (shellcheck, gofmt, `go vet`), then `go test` and the tests in `tests/` |
+| `make test` | Run the tests in `tests/` (each under a throwaway `HOME`, with stubs) |
 | `make tidy` | `go mod tidy` in every tool (builds no longer do this) |
 | `make tools` / `make dotfiles` | Relink `~/bin` / dotfiles only |
 | `make defaults` / `make trackpad` | Apply macOS defaults (with trackpad gestures) |
@@ -101,6 +105,7 @@ MiMac/
 │   ├── preferences/
 │   └── topgrade.toml
 ├── tools/              # Go/Bubble Tea TUIs: picker, mimac-status (+ shared theme)
+├── tests/              # Shell tests run by make check: update verdict, check-updates, pull, …
 ├── docs/
 │   ├── manual.md       # Workflow manual source
 │   └── assets/         # CSS for generated HTML
@@ -111,7 +116,7 @@ MiMac/
     ├── brew-packages   # Phase 2
     ├── post-install    # Phase 3
     ├── sync            # Brewfile sync
-    ├── check-updates   # Weekly "MiMac has new commits" prompt (non-blocking)
+    ├── check-updates   # "MiMac has new commits" prompt at shell start (non-blocking)
     ├── defaults.sh     # macOS defaults
     ├── hardening.sh    # Security hardening
     └── ...             # status, trim-services, snapshot-prefs, uninstall, etc.

@@ -12,6 +12,28 @@
 # everything again.
 set -uo pipefail
 
+# Spelled out rather than sourced from bin/lib: this runs unattended, and
+# depends on nothing but itself. Both halves matter: with no parser at all the
+# flag was simply discarded, so `clear-app-caches --help` cleared the caches
+# instead of describing what it clears.
+usage() {
+  cat <<'EOF'
+clear-app-caches — delete Discord's cache directories
+
+Usage:
+  clear-app-caches [--help | -h]
+
+Takes no options other than --help. Nothing is prompted and nothing is kept —
+the caches rebuild on next launch. The com.user.clear_app_caches LaunchAgent
+runs it on a schedule.
+EOF
+}
+
+case "${1:-}" in
+  -h|--help) usage; exit 0 ;;
+  ?*)        usage >&2; printf '\nunknown argument: %s\n' "$1" >&2; exit 2 ;;
+esac
+
 if [[ -z "${HOME:-}" || ! -d "$HOME" ]]; then
   echo "error: HOME is unset or not a directory — refusing to remove anything" >&2
   exit 1

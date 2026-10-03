@@ -31,12 +31,13 @@ repair what it set up.
 |---|---|---|
 | `make maintain` | Weekly | The whole routine below, in order, then `doctor` |
 | `make doctor` | When something feels off | Find what is broken or drifting. `ARGS=--fix` repairs the safe items |
-| `make update` | Any time | Upgrade every package via topgrade |
+| `make update` | Any time | Upgrade every package via topgrade, then say which steps failed and that the rest ran |
 | `make updates` | Any time | macOS updates for this version only — never a major upgrade |
 | `make sync` | After installing or removing apps | Record new Homebrew packages in the Brewfile |
 | `status` | Any time | Health dashboard TUI; `make status` prints the plain-text version |
 
-Every one of these works from `~/` as well — `~/Makefile` forwards them to the repo.
+Every one of these works from `~/` as well — `~/Makefile` forwards them to the repo, and every
+other target too.
 
 ## The Weekly Routine (`make maintain`)
 
@@ -46,9 +47,11 @@ make maintain
 
 Runs, in order, carrying on past a step that fails so that `doctor` always gets the last word:
 
-1. `make pull` — fast-forward MiMac to origin (`git pull --ff-only`; a diverged repo is left alone)
+1. `make pull` — fast-forward MiMac to origin (`git pull --ff-only`; a diverged repo is left
+   alone), and relink what the pulled commits changed. The rebuild waits for step 5
+   (`PULL_BUILD=0`), because step 3 can bring a new Go
 2. `make tools` — link any new commands into `~/bin`, and remove links to ones that were deleted
-3. `make update` — topgrade
+3. `make update` — topgrade, and its verdict (below)
 4. `make updates` — macOS updates for the installed version
 5. `make build-tools` — rebuild the Go TUIs (about a second on Apple Silicon)
 6. `make doctor`
@@ -99,6 +102,20 @@ tldr pages, `gh` extensions, and a pull of this repo. Steps it deliberately skip
 | `claude_code` | Claude Code updates itself |
 | `node`, `pnpm` | Not used on this Mac |
 
+topgrade runs every step even when one fails, then exits 1. Alone, that ended the run on
+`make: *** [update] Error 1`, which reads as though it broke off. So `make update` ends by
+reading topgrade's Summary and saying what the status means:
+
+- *"Update finished: every step ran. 1 of 8 failed: Brew Cask (ARM)."* — only that step
+  failed; the rest succeeded, and make's `Error 1` that follows is for that step alone.
+- *"topgrade stopped before its summary … not every step ran."* — the run really did stop
+  short; its last output is above.
+- *"Update finished: all 8 steps succeeded."*
+
+The run is recorded through `script(1)` at a terminal (so topgrade's colours and its sudo
+prompt are unchanged) and through `tee` otherwise. The recording is deleted afterwards, and on
+Ctrl-C.
+
 ## macOS Updates (`make updates`)
 
 ```bash
@@ -118,17 +135,29 @@ exited. If the list cannot be parsed, nothing is installed.
 
 ## Update Notices (`check-updates`)
 
-Runs from `.zshrc`, at most once a week. When the repo has new commits on origin it asks
-*"MiMac updates available. Pull them now?"* and runs `make pull`. It never blocks shell
-startup on the network: it compares against the last fetched state and refreshes it with a
-background `git fetch` for next time.
+Runs from `.zshrc` at every new shell. When the checkout is behind origin it asks
+*"MiMac: 2 new commits on origin/main. Update now? [y/N]"*, and a yes runs `make pull`, which
+also rebuilds and relinks what the commits changed. It asks once for each new remote head:
+answer no and it stays quiet until origin moves again. A yes whose pull fails is not an
+answer, so the next shell asks again. It says nothing on a branch other than `main`, or when
+the checkout has commits origin lacks.
 
-## Linting the Repo (`make check`)
+It never blocks shell startup on the network. The compare reads the last fetched state, and
+a background `git fetch`, at most once a day, refreshes it for the next shell. It used to run
+the whole check once a week, so a commit pushed the day after a check waited up to a week.
+
+## Linting and Testing the Repo (`make check`)
 
 ```bash
-make check    # shellcheck every script, go vet every TUI
+make check    # shellcheck, gofmt and go vet; then go test and every test in tests/
+make test     # only the tests in tests/
 make tidy     # go mod tidy in every tool — builds no longer do this themselves
 ```
+
+Each test in `tests/` runs under a throwaway `HOME`, with stubs for anything that would reach
+the network, this Mac's settings or the real `~/bin`, so none needs sudo or changes anything.
+They hold the behaviour of `make update`'s verdict, `check-updates`, `make pull`, `~/Makefile`
+and setup's dotfile backups.
 
 ---
 
@@ -189,6 +218,10 @@ override database rather than to the job's plist — and that is what makes the 
 possible at all: their plists live under `/System/Library/LaunchAgents` where SIP forbids
 edits, but the override database is writable and survives a reboot.
 
+`trim-services` reads that database back (`launchctl print-disabled`): a job already disabled
+is reported as such and left alone, and a disable that `launchctl` accepted but launchd does
+not list is reported as a failure, not a success.
+
 | Service | What it is | Cost of disabling |
 |---|---|---|
 | `com.google.GoogleUpdater.wake` | Google Chrome updater | Wakes hourly. The Brewfile carries `google-chrome` as greedy, so brew already upgrades Chrome. **Chrome reinstalls this agent when it next launches** — re-run after a Chrome update |
@@ -197,6 +230,11 @@ edits, but the override database is writable and survives a reboot.
 
 Every disable is appended to `~/.mimac/services-rollback.sh`, in the same shape as the
 defaults and hardening rollbacks.
+
+> **Check the Photos agents after a restart.** On macOS 26.7, mrk found both running again a
+> minute after a restart, though launchd still listed them as disabled: it starts each one
+> for any process that asks. Not yet checked on macOS 15. After the next restart,
+> `pgrep -l analysisd` shows whether the disable held.
 
 One honest limitation in the output: SIP refuses `launchctl bootout` on a running Apple
 agent, so for those the override lands but the process keeps running until the next login.
@@ -357,7 +395,7 @@ and signing in to 1Password/Bitwarden and cloud storage.
 ## From Anywhere (`~/Makefile`)
 
 `~/Makefile` is linked by Phase 1. `make help` from `~/` lists these first, then everything
-from `~/MiMac/`.
+from `~/MiMac/`. Any other target is forwarded to `~/MiMac` too, with its `ARGS`.
 
 | Command | Description |
 |---|---|
@@ -367,7 +405,7 @@ from `~/MiMac/`.
 | `make updates` | macOS updates for this version only (`ARGS=-n` to preview) |
 | `make status` | Show installation status |
 | `make sync` | Sync installed Homebrew packages into the Brewfile (`ARGS=-c` commit, `ARGS=-n` dry run) |
-| `make pull` | Fast-forward MiMac to origin |
+| `make pull` | Fast-forward MiMac to origin, then rebuild and relink what the pulled commits changed |
 | `make snapshot-prefs` | Export app preferences |
 | `make build-tools` | Rebuild the Go TUIs |
 | `make manual` | Regenerate `docs/index.html` |
@@ -389,7 +427,8 @@ Everything above, plus:
 | `make trim-services` | Disable background launchd agents this Mac does not need (`ARGS=-n` to preview) |
 | `make sync-prune` / `make sync-clean` | Preview / remove Brewfile entries no longer installed |
 | `make sync-login-items` | Sync system login items into post-install |
-| `make check` | shellcheck every script, `go vet` every TUI |
+| `make check` | shellcheck, gofmt, `go vet`, then `go test` and the tests in `tests/` |
+| `make test` | Only the tests in `tests/` |
 | `make tidy` | `go mod tidy` in every tool |
 | `make uninstall` | Remove symlinks and undo setup |
 | `make nuke` / `make nuke-execute` | Preview / perform complete MiMac removal |
@@ -405,7 +444,7 @@ Symlinked into `~/bin` by Phase 1.
 | `status` | Health dashboard TUI (`mimac-status`) |
 | `doctor` | Same as `make doctor` |
 | `macos-updates` | Same as `make updates` |
-| `check-updates` | Weekly "MiMac has new commits" prompt; runs from `.zshrc` |
+| `check-updates` | "MiMac has new commits" prompt at shell start, once per new remote head; runs from `.zshrc` |
 | `clear-app-caches` | Clears the Discord cache directories. Also runs from a LaunchAgent daily at 03:00 |
 | `trim-services` | Same as `make trim-services` |
 | `hide_tm.sh` | Hides Time Machine volumes from the Finder sidebar. Volume names as arguments, or set `TM_VOLUMES` |
@@ -420,7 +459,8 @@ Symlinked into `~/bin` by Phase 1.
 - **Dotfiles** — Which files are symlinked into `~/` and which are missing
 - **Tools** — Which scripts/bin symlinks are live in `~/bin` and which are broken
 - **macOS Defaults** — Whether defaults have been applied (rollback script present)
-- **Backups** — Number of dotfile backups in `~/.mimac/backups/`
+- **Backups** — Number of dotfile backups in `~/.mimac/backups/` (the `status` dashboard
+  shows this only when there is one)
 - **Shell** — Current login shell (should be Zsh)
 - **PATH** — Whether `~/bin` is on the PATH
 - **Homebrew** — Version installed
@@ -437,12 +477,13 @@ MiMac writes runtime state to `~/.mimac/` and `~/.cache/mimac/`:
 | File / Directory | Purpose |
 |---|---|
 | `~/.mimac/preferences/` | Local snapshot of app plists + App Support files |
-| `~/.mimac/backups/` | Timestamped backups of dotfiles that were replaced during setup |
+| `~/.mimac/backups/` | Timestamped backups of whatever setup replaced with a dotfile link: a file, a directory, or a link pointing elsewhere |
 | `~/.mimac/defaults-rollback.sh` | Undo every `defaults write` MiMac made |
 | `~/.mimac/hardening-rollback.sh` | Undo security hardening |
 | `~/.mimac/services-rollback.sh` | Re-enable services turned off by `trim-services` |
 | `~/.mimac/install.log` | Log of the setup phases |
-| `~/.cache/mimac/last-update-check` | When `check-updates` last looked |
+| `~/.cache/mimac/last-update-check` | When `check-updates` last started a background fetch |
+| `~/.cache/mimac/asked-<sha>` | The remote head `check-updates` last asked about |
 
 Each rollback script records the state *before* MiMac's first change, and re-runs never
 overwrite it. To undo macOS defaults:
@@ -461,7 +502,8 @@ bash ~/.mimac/defaults-rollback.sh
 | New terminals open slowly | `make doctor` checks the usual cause (insecure completion directories) and times a new shell |
 | `make setup` fails at Xcode CLT | Run `xcode-select --install`, wait for the GUI install dialog to complete, then re-run |
 | Dotfile conflict ("file exists" warning) | Backup auto-created in `~/.mimac/backups/`; resolve manually then re-run |
-| A command in `~/bin` stopped working after `make pull` | `make tools` relinks and removes dead links (`make maintain` does this for you) |
+| A command in `~/bin` stopped working after a pull | `make pull` relinks what it pulled; for a pull made with plain `git`, `make tools` relinks and removes dead links |
+| `make update` ends in `Error 1` | Read the line above it: it names the step that failed, and says whether the rest ran |
 | `make updates` says it is not installing a macOS version | By design — major upgrades are done by hand in System Settings |
 | topgrade appears to hang | Check `~/.config/topgrade.toml` still links to `assets/topgrade.toml`, which disables the step that suspends it |
 | post-install skips plist imports | No snapshot in `~/.mimac/preferences` yet — run `make snapshot-prefs` on a configured Mac |

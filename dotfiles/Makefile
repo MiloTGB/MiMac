@@ -1,5 +1,11 @@
 MIMAC := $(HOME)/MiMac
 
+# ~/Makefile, linked from ~/MiMac/dotfiles: MiMac's make targets from the home
+# directory. The rules below are the ones `make help` lists under "From ~/";
+# any other target goes to ~/MiMac's Makefile by the .DEFAULT rule at the end,
+# so every target there works from here — `make check`, `make sync-clean`,
+# `make trim-services` and the rest used to say "No rule to make target".
+
 .PHONY: status doctor update updates maintain pull sync snapshot-prefs build-tools manual help
 
 help: ## Show available make commands
@@ -44,3 +50,10 @@ build-tools: ## Rebuild the Go TUIs (mimac-picker, mimac-status)
 
 manual: ## Regenerate docs/index.html from docs/manual.md
 	@$(MAKE) -C $(MIMAC) manual --no-print-directory
+
+# Every other target, to ~/MiMac. ARGS, like any variable given on the command
+# line, reaches the inner make by itself; it is spelt out here as the rules
+# above spell it. A target with no rule anywhere fails there, with ~/MiMac's
+# "No rule to make target".
+.DEFAULT:
+	@$(MAKE) -C $(MIMAC) $@ ARGS="$(ARGS)" --no-print-directory
