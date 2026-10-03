@@ -20,6 +20,11 @@ readonly SCRIPT_DIR REPO_ROOT
 # shellcheck source=lib.sh
 source "$SCRIPT_DIR/lib.sh"
 
+# Homebrew on PATH, when Phase 2 installed it after this shell started: the
+# configs below are linked only for tools found through PATH (homebrew_on_path
+# in lib.sh). Before it, make all on a new Mac skipped them all.
+homebrew_on_path || true
+
 failed=0
 incr_failed(){ failed=$((failed + 1)); }
 

@@ -402,8 +402,10 @@ make dock
 make doctor         # Confirm everything landed; ARGS=--fix for the safe repairs
 ```
 
-`make all` runs Phases 1–3 and `build-tools` in one go. Phase 3 switches the repo's remote
-from HTTPS to SSH once `ssh -T git@github.com` succeeds.
+`make all` runs Phases 1–3 and `build-tools` in one go. Phase 3 and `build-tools` find the
+Homebrew Phase 2 installed even in the shell that ran it, so no second new terminal is needed:
+before, they reported Go, topgrade, `gh` and htop as not installed. Phase 3 switches the repo's
+remote from HTTPS to SSH once `ssh -T git@github.com` succeeds.
 
 **Coming from another Mac with Migration Assistant?** Run `make doctor` first. Migration
 carries over things that do not belong on Apple Silicon — an Intel Homebrew in `/usr/local`,

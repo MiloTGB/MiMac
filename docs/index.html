@@ -1084,7 +1084,10 @@ Mac</h1>
 <span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> dock</span>
 <span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> doctor         <span class="co"># Confirm everything landed; ARGS=--fix for the safe repairs</span></span></code></pre></div>
 <p><code>make all</code> runs Phases 1–3 and <code>build-tools</code> in
-one go. Phase 3 switches the repo’s remote from HTTPS to SSH once
+one go. Phase 3 and <code>build-tools</code> find the Homebrew Phase 2
+installed even in the shell that ran it, so no second new terminal is
+needed: before, they reported Go, topgrade, <code>gh</code> and htop as
+not installed. Phase 3 switches the repo’s remote from HTTPS to SSH once
 <code>ssh -T git@github.com</code> succeeds.</p>
 <p><strong>Coming from another Mac with Migration Assistant?</strong>
 Run <code>make doctor</code> first. Migration carries over things that

@@ -66,8 +66,11 @@ chmod +x "$S/go"
 ln -s "$REAL_GIT" "$S/git"
 ln -s "$REAL_MAKE" "$S/make"
 
+# MIMAC_BREW names a brew that does not exist, so the Makefile's brew-env finds
+# no Homebrew to put ahead of the stubs. Without it, on a Mac with Homebrew,
+# the real go would build the tools in place of the stub, fetching modules.
 run_env() {
-  env -i HOME="$H" PATH="$S:/usr/bin:/bin:/usr/sbin:/sbin" \
+  env -i HOME="$H" PATH="$S:/usr/bin:/bin:/usr/sbin:/sbin" MIMAC_BREW="$W/no-homebrew/bin/brew" \
     TMPDIR="${TMPDIR:-/tmp}" TERM=dumb \
     GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
     GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@test.invalid \

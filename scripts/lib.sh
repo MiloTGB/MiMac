@@ -52,6 +52,41 @@ section() { printf '\n%s%s══ %s%s\n\n' "$_B" "$_BLU" "$*" "$_R" >&2; }
 dry()     { if (( DRY_RUN )); then printf '%s  ◦%s %s\n' "$_BLU" "$_R" "$*" >&2; else log "$@"; fi; }
 logskip() { printf '%s  ·%s %s (%s)\n' "$_YLW" "$_R" "$1" "$2" >&2; }
 
+# BREW_PATHS — where Homebrew's brew is when installed: /opt/homebrew on Apple
+# silicon, /usr/local on Intel. MIMAC_BREW names one other path instead, so a
+# test can stand a stub in for it; scripts/sync takes MIMAC_BREW the same way.
+if [[ -n "${MIMAC_BREW:-}" ]]; then
+  BREW_PATHS=("$MIMAC_BREW")
+else
+  BREW_PATHS=(/opt/homebrew/bin/brew /usr/local/bin/brew)
+fi
+
+# homebrew_on_path — put Homebrew on PATH when it is installed and its bin is
+# not on PATH. Returns 1 when there is no Homebrew.
+#
+# make all runs every phase with the PATH it started with, and on a new Mac
+# that shell started before Phase 2 installed Homebrew. brew-packages runs
+# `brew shellenv` for itself, which reaches its own process alone, so after it
+# build-tools failed with "Go is not installed" and post-install skipped the
+# topgrade, gh and htop configs as "not installed" — on the Mac Phase 2 had
+# just installed them on. Ported from mrk (its audit 19, W-31).
+#
+# Only when the bin is missing: shellenv puts Homebrew first on PATH, and a
+# PATH that already holds it keeps its order, so a Mac set up from its
+# dotfiles sees no change.
+homebrew_on_path() {
+  local b
+  for b in "${BREW_PATHS[@]}"; do
+    [[ -x "$b" ]] || continue
+    case ":$PATH:" in
+      *":${b%/*}:"*) ;;
+      *) eval "$("$b" shellenv)" ;;
+    esac
+    return 0
+  done
+  return 1
+}
+
 # Refresh sudo timestamp to prevent timeout during long-running installs.
 # Uses -n (non-interactive) so it never prompts — only extends an active session.
 sudo_refresh() { sudo -n -v 2>/dev/null || true; }

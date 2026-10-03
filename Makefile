@@ -13,14 +13,23 @@ serves-home = [ "$$(cd "$(MIMAC_HOME)" 2>/dev/null && pwd -P)" = "$$(cd "$(REPO_
 
 .PHONY: trim-services all install fix-exec setup brew post-install tools dotfiles defaults trackpad uninstall nuke update updates pull maintain check test tidy harden status doctor dock sync sync-commit sync-prune sync-clean sync-login-items setup-dry nuke-execute picker mimac-status build-tools manual help snapshot-prefs
 
+# Put Homebrew on PATH for one recipe line, when it is installed and not on PATH
+# already: homebrew_on_path in scripts/lib.sh. make all runs every step with the
+# PATH it started with, and on a new Mac that holds no Homebrew, so build-tools
+# failed with "Go is not installed" right after Phase 2 had installed Go.
+brew-env = . "$(SCRIPTS)/lib.sh" && { homebrew_on_path || true; };
+
 # Build a Go tool: $(call go-build,<binary>,<tool-dir>)
+# brew-env on both lines that need go, since each recipe line is its own shell.
 define go-build
-	@if ! command -v go >/dev/null 2>&1; then \
+	@$(brew-env) \
+	if ! command -v go >/dev/null 2>&1; then \
 		echo "error: Go is not installed. Install it with: brew install go"; \
 		exit 1; \
 	fi
 	@printf '  \033[36m▸\033[0m Building $(1)…\n'
-	@VERSION=$$(git -C "$(REPO_ROOT)" describe --tags --always --dirty 2>/dev/null || echo dev); \
+	@$(brew-env) \
+	 VERSION=$$(git -C "$(REPO_ROOT)" describe --tags --always --dirty 2>/dev/null || echo dev); \
 	 SHA=$$(git -C "$(REPO_ROOT)" rev-parse --short HEAD 2>/dev/null || echo unknown); \
 	 cd "$(REPO_ROOT)/tools/$(2)" && \
 	 go build -ldflags "-X main.Version=$$VERSION -X main.GitSHA=$$SHA" -o "$(BIN_DIR)/$(1)" .
