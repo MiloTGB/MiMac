@@ -190,8 +190,42 @@ func TestUnrecordedAppPreferences(t *testing.T) {
 		}
 	}
 	g = checkUnrecorded(repo, home, brewDrift{})
-	if l, ok := line(g, "App preferences snapshotted 3 hours ago"); !ok || l.sev != sevInfo {
-		t.Errorf("the snapshot's age should be its newest file's:\n%s", texts(g))
+	if l, ok := line(g, "App preferences snapshotted 3 hours ago, never pushed"); !ok || l.sev != sevInfo {
+		t.Errorf("before it is a clone, the snapshot's age should be its newest file's:\n%s", texts(g))
+	}
+}
+
+// A clone of mimac-prefs: a snapshot commit the remote lacks warns, with
+// snapshot-prefs as the fix, which pushes it; the last commit's age is an aside.
+func TestUnrecordedPrefsRepo(t *testing.T) {
+	repo := mimacRepo(t)
+	home := t.TempDir()
+	prefs := filepath.Join(home, ".mimac", "preferences")
+	newRepo(t, prefs, true) // committed and pushed
+
+	g := checkUnrecorded(repo, home, brewDrift{})
+	if _, ok := line(g, "not pushed to mimac-prefs"); ok {
+		t.Errorf("a clone with everything pushed should not warn:\n%s", texts(g))
+	}
+	if l, ok := line(g, "App preferences: last change recorded just now"); !ok || l.sev != sevInfo || g.sev != sevOK {
+		t.Errorf("the last commit's age should be an aside, the panel OK:\n%s", texts(g))
+	}
+
+	write(t, filepath.Join(prefs, "iTerm2.plist"), "changed\n")
+	run(t, prefs, "git", "add", "-A")
+	run(t, prefs, "git", "commit", "-qm", "snapshot")
+	g = checkUnrecorded(repo, home, brewDrift{})
+	if l, ok := line(g, "App preferences: 1 snapshot commit not pushed to mimac-prefs"); !ok || l.sev != sevWarn || l.fix != fixSnapshot {
+		t.Errorf("an unpushed snapshot should warn with %q:\n%s", fixSnapshot, texts(g))
+	}
+	if g.fix != fixSnapshot {
+		t.Errorf("the panel's fix should be the snapshot, which pushes it; got %q", g.fix)
+	}
+
+	// A clone whose first push never happened: every commit counts.
+	run(t, prefs, "git", "branch", "--unset-upstream")
+	if _, ok := line(checkUnrecorded(repo, home, brewDrift{}), "2 snapshot commits not pushed"); !ok {
+		t.Errorf("with no upstream, every commit should count:\n%s", texts(checkUnrecorded(repo, home, brewDrift{})))
 	}
 }
 

@@ -11,7 +11,7 @@ INSTALL_BIN := $(HOME)/bin
 MIMAC_HOME := $(HOME)/MiMac
 serves-home = [ "$$(cd "$(MIMAC_HOME)" 2>/dev/null && pwd -P)" = "$$(cd "$(REPO_ROOT)" && pwd -P)" ]
 
-.PHONY: trim-services all install fix-exec setup brew post-install tools dotfiles defaults trackpad uninstall nuke update updates pull maintain check test tidy harden status doctor dock sync sync-commit sync-prune sync-clean sync-login-items setup-dry nuke-execute picker mimac-status build-tools manual help snapshot-prefs
+.PHONY: trim-services pull-prefs all install fix-exec setup brew post-install tools dotfiles defaults trackpad uninstall nuke update updates pull maintain check test tidy harden status doctor dock sync sync-commit sync-prune sync-clean sync-login-items setup-dry nuke-execute picker mimac-status build-tools manual help snapshot-prefs
 
 # Put Homebrew on PATH for one recipe line, when it is installed and not on PATH
 # already: homebrew_on_path in scripts/lib.sh. make all runs every step with the
@@ -58,8 +58,8 @@ all: fix-exec setup brew post-install build-tools ## Full install: setup + brew 
 	@printf '\033[1;32m  ✔  MiMac installed successfully.\033[0m\n'
 	@printf '\n'
 	@printf '  Run \033[43;1;30m exec zsh \033[0m to reload your shell.\n'
-	@if [ ! -d "$(HOME)/.mimac/preferences" ]; then \
-		printf '  Preferences not restored — snapshot them with \033[36mmake snapshot-prefs\033[0m\n'; \
+	@if [ ! -d "$(HOME)/.mimac/preferences/.git" ]; then \
+		printf '  Preferences not restored — add your SSH key to GitHub, then run \033[36mmake pull-prefs\033[0m and \033[36mmake post-install\033[0m\n'; \
 	fi
 	@printf '\n'
 
@@ -156,12 +156,13 @@ pull: ## Fast-forward MiMac to origin, then rebuild and relink what the pulled c
 	fi; \
 	exit $$rc
 
-maintain: ## Weekly upkeep: pull, relink, update packages + macOS, rebuild TUIs, doctor
+maintain: ## Weekly upkeep: pull, relink, update packages + macOS, rebuild TUIs, snapshot prefs, doctor
 	-@$(MAKE) --no-print-directory pull PULL_BUILD=0
 	-@$(MAKE) --no-print-directory tools
 	-@$(MAKE) --no-print-directory update
 	-@$(MAKE) --no-print-directory updates
 	-@$(MAKE) --no-print-directory build-tools
+	-@$(MAKE) --no-print-directory snapshot-prefs
 	@$(MAKE) --no-print-directory doctor
 
 harden: ## Apply macOS security hardening
@@ -224,8 +225,11 @@ sync-clean: ## Remove stale packages and commit
 sync-login-items: ## Sync system login items into post-install
 	@"$(SCRIPTS)/sync-login-items"
 
-snapshot-prefs: ## Export app preferences
-	@"$(SCRIPTS)/snapshot-prefs"
+snapshot-prefs: ## Export app preferences and push them to mimac-prefs (ARGS=-n to preview)
+	@"$(SCRIPTS)/snapshot-prefs" $(ARGS)
+
+pull-prefs: ## Clone or update ~/.mimac/preferences from mimac-prefs
+	@"$(SCRIPTS)/pull-prefs"
 
 build-tools: ## Build all Go TUI binaries (requires Go)
 	@printf '\n\033[1;34m══ Building TUI Tools\033[0m\n\n'

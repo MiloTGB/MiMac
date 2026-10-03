@@ -10,7 +10,7 @@ Everything is idempotent — run any command as often as you like.
 
 | Command | When | What it does |
 |---------|------|--------------|
-| `make maintain` | Weekly | Pull MiMac, relink tools, update packages and macOS, rebuild the TUIs, then `doctor` |
+| `make maintain` | Weekly | Pull MiMac, relink tools, update packages and macOS, rebuild the TUIs, push app preferences, then `doctor` |
 | `make doctor` | When something feels off | Find what is broken or drifting — see below. `ARGS=--fix` repairs the safe items |
 | `make update` | Any time | Upgrade every package (topgrade: Homebrew, casks, oh-my-zsh, pipx, gh extensions), then say which steps failed and that the rest ran |
 | `make updates` | Any time | Install macOS updates for this version. **Never a major upgrade** — `ARGS=-n` to preview |
@@ -41,14 +41,15 @@ permissions, old-hostname completion caches, `~/bin` links, stale TUI binaries).
 
 | Target | Description |
 |--------|-------------|
-| `make maintain` | Weekly upkeep: pull, relink, update, macOS updates, rebuild TUIs, doctor |
+| `make maintain` | Weekly upkeep: pull, relink, update, macOS updates, rebuild TUIs, snapshot prefs, doctor |
 | `make doctor` | Health check (`ARGS=--fix` to repair the safe items) |
 | `make update` | Update via topgrade (or brew), ending on which steps failed and that the rest ran |
 | `make updates` | macOS updates for the installed version only (`ARGS=-n` to preview) |
 | `make pull` | Fast-forward MiMac to origin, then rebuild and relink what the pulled commits changed |
 | `make sync` | Snapshot installed Homebrew packages into the Brewfile |
 | `make status` | Print the dashboard's panels as text (`mimac-status --plain`) |
-| `make snapshot-prefs` | Export app preferences to `~/.mimac/preferences` |
+| `make snapshot-prefs` | Export app preferences and push them to the private `mimac-prefs` repo (`ARGS=-n` to preview) |
+| `make pull-prefs` | Clone or fast-forward `~/.mimac/preferences` from `mimac-prefs` |
 | `make trim-services` | Disable background launchd agents this Mac does not need (`ARGS=-n` to preview) |
 | `make harden` | Security hardening (Touch ID sudo via `sudo_local`, screen lock, firewall) |
 | `make build-tools` | Build the Go TUIs: `mimac-picker`, `mimac-status` |
@@ -72,7 +73,7 @@ git clone https://github.com/MiloTGB/MiMac.git ~/MiMac
 cd ~/MiMac
 make install        # Phase 1: Xcode CLI tools, dotfiles, ~/bin, macOS defaults, login shell
 make brew           # Phase 2: Homebrew, then pick formulae & casks from the Brewfile
-make post-install   # Phase 3: app preferences, browser policies, login items, LaunchAgents
+make post-install   # Phase 3: app preferences (from mimac-prefs, once GitHub has this Mac's SSH key), browser policies, login items, LaunchAgents
 make dock
 make doctor         # confirm everything landed
 ```

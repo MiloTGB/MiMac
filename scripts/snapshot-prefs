@@ -1,7 +1,31 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# MiMac snapshot-prefs — export current app preferences to ~/.mimac/preferences/
+# MiMac snapshot-prefs — export app preferences to ~/.mimac/preferences, and
+# commit and push them to the private mimac-prefs repo.
+#
+# From 2026-08 to 2026-10 this exported locally only (9fd8246): nothing left
+# this Mac, so a Mac lost or erased took its settings with it unless Time
+# Machine had them. The push is back, ported from mrk's snapshot-prefs with its
+# safeguards: a plist that changed only in keys that change on their own is not
+# committed, a secret scan stands before the commit, a failed push says what
+# became of the commit, and the next run pushes it.
+#
+# License registrations are pushed on purpose: Loopback's and Audio Hijack's
+# plists hold a registrationInfo Code and Name, so a new Mac needs no codes
+# typed in. post-install imports a plist only for an app with none yet, so
+# nothing here touches the registrations of a Mac already set up.
+
+# Requires bash 4+ (associative arrays). Re-exec with Homebrew's bash if needed.
+if (( BASH_VERSINFO[0] < 4 )); then
+  for _brew_bash in /opt/homebrew/bin/bash /usr/local/bin/bash; do
+    if [[ -x "$_brew_bash" ]]; then
+      exec "$_brew_bash" "$0" "$@"
+    fi
+  done
+  echo "Error: bash 4+ is required but not found." >&2
+  exit 1
+fi
 
 # Resolve symlinks to find the actual script directory
 SOURCE="${BASH_SOURCE[0]}"
@@ -15,10 +39,158 @@ SCRIPT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
 # shellcheck source=lib.sh
 source "$SCRIPT_DIR/lib.sh"
 
-LOCAL_PREFS_DIR="$HOME/.mimac/preferences"
-APP_SUPPORT="$HOME/Library/Application Support"
+usage() {
+  cat <<'EOF'
+snapshot-prefs — export app preferences to ~/.mimac/preferences and push them
 
-mkdir -p "$LOCAL_PREFS_DIR"
+Usage:
+  snapshot-prefs [--dry-run]
+
+Options:
+  -n, --dry-run   Export into a scratch copy of ~/.mimac/preferences and report
+                  what would be committed, with each plist's changed keys.
+                  ~/.mimac/preferences is left as it was; nothing is committed
+                  or pushed. The secret scan still runs.
+  -h, --help      Show this help
+
+snapshot-prefs exports each app's preferences into ~/.mimac/preferences, and
+commits and pushes that tree to the private mimac-prefs repo (PREFS_REPO names
+another). The first run clones the repo there, keeping any files it holds. It
+does not quit any app: defaults export asks the preferences system, which has
+an open app's changes as soon as it makes them. An app with no preferences yet
+is skipped, and its saved copy kept.
+
+A plist that differs from the last commit only in keys that change on their
+own (update-check times, window positions, launch counters) is left out of the
+commit, and when nothing else changed there is no commit. A file that looks as
+though it holds a secret stops the commit and asks.
+
+When a push fails, snapshot-prefs says that the commit is kept, and exits with
+git's status. The next run pushes that commit, also when it finds nothing new
+to commit. "No changes to push." means the remote has the last commit.
+EOF
+}
+
+DRY_RUN=0
+for arg in "$@"; do
+  case "$arg" in
+    -n|--dry-run) DRY_RUN=1 ;;
+    -h|--help)    usage; exit 0 ;;
+    *)            usage >&2; printf '\nunknown argument: %s\n' "$arg" >&2; exit 2 ;;
+  esac
+done
+
+APP_SUPPORT="$HOME/Library/Application Support"
+# Where the apps are. MIMAC_APPS_DIR names another, so tests/snapshot-prefs.sh
+# can stand fake apps in for them.
+APPS="${MIMAC_APPS_DIR:-/Applications}"
+
+# Apps whose export failed or timed out — reported at exit, never fatal.
+SNAPSHOT_SKIPPED=()
+DRY_SCRATCH=""
+on_exit(){
+  if (( ${#SNAPSHOT_SKIPPED[@]} > 0 )); then
+    warn "Skipped ${#SNAPSHOT_SKIPPED[@]} app(s) — export failed or timed out: ${SNAPSHOT_SKIPPED[*]}"
+  fi
+  if [[ -n "$DRY_SCRATCH" ]]; then rm -rf "$DRY_SCRATCH"; fi
+}
+trap on_exit EXIT
+
+# Run `defaults ARGS...` with a timeout so a hung domain can't stall the run.
+defaults_timeout(){
+  local secs=15
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$secs" defaults "$@"
+  elif command -v gtimeout >/dev/null 2>&1; then
+    gtimeout "$secs" defaults "$@"
+  else
+    defaults "$@" &
+    local pid=$! rc=0
+    # The watchdog's output goes nowhere: its sleep would otherwise hold open
+    # the pipe of a caller capturing the output until the timeout.
+    ( sleep "$secs"; kill "$pid" 2>/dev/null ) >/dev/null 2>&1 &
+    local killer=$!
+    wait "$pid" 2>/dev/null || rc=$?
+    kill "$killer" 2>/dev/null || true
+    return "$rc"
+  fi
+}
+
+# unpushed_count DIR — how many commits DIR's branch holds that its upstream
+# lacks, as of the last fetch or push: nothing asks the network. With no
+# upstream yet, every commit counts. 0 when DIR is no repository, or holds no
+# commit.
+unpushed_count() {
+  local dir=$1 n
+  if [[ ! -d "$dir/.git" ]] || ! git -C "$dir" rev-parse --verify --quiet HEAD >/dev/null; then
+    echo 0
+    return 0
+  fi
+  n=$(git -C "$dir" rev-list --count '@{upstream}..HEAD' 2>/dev/null) \
+    || n=$(git -C "$dir" rev-list --count HEAD 2>/dev/null) || n=0
+  echo "$n"
+}
+
+# The real ~/.mimac/preferences, kept for unpushed_count: a dry run points
+# LOCAL_PREFS_DIR at a scratch clone, whose upstream is this directory and not
+# mimac-prefs.
+REAL_PREFS_DIR="$LOCAL_PREFS_DIR"
+
+# push_snapshot — push HEAD to mimac-prefs. When the push fails, say what
+# became of the commit, and exit with git's status, rather than end on git's
+# own last line, which says nothing of the commit.
+push_snapshot() {
+  local rc=0
+  git push -u origin HEAD || rc=$?
+  if (( rc != 0 )); then
+    err "The push failed (git exit $rc): mimac-prefs does not have the last commit."
+    info "The commit is kept in $REAL_PREFS_DIR. The next run of snapshot-prefs pushes it."
+    exit "$rc"
+  fi
+  ok "Pushed to $PREFS_REPO"
+}
+
+# A dry run exports into a scratch copy instead, so the staging, the comparison
+# with HEAD and the secret scan all run as they would for real, against the
+# same last commit, and the real tree is never written. With no repository here
+# yet, the copy is a clone of mimac-prefs, or an empty repository when that
+# cannot be reached.
+if (( DRY_RUN )); then
+  if [[ -d "$LOCAL_PREFS_DIR/.git" ]] && busy=$(git_in_progress "$LOCAL_PREFS_DIR"); then
+    err "$busy in $LOCAL_PREFS_DIR — resolve it first. Nothing was exported."
+    exit 1
+  fi
+  DRY_SCRATCH=$(mimac_mktemp_d) || { err "could not create a scratch directory for the dry run"; exit 1; }
+  if [[ -d "$LOCAL_PREFS_DIR/.git" ]]; then
+    git clone -q "$LOCAL_PREFS_DIR" "$DRY_SCRATCH/preferences" 2>/dev/null \
+      || { err "could not copy $LOCAL_PREFS_DIR for the dry run"; exit 1; }
+  elif ! git clone -q "$PREFS_REPO" "$DRY_SCRATCH/preferences" 2>/dev/null; then
+    warn "Could not reach $PREFS_REPO: everything below shows as new."
+    git init -q "$DRY_SCRATCH/preferences"
+  fi
+  log "Dry run: exporting into a scratch copy of $LOCAL_PREFS_DIR. Nothing there changes, and nothing is committed or pushed."
+  LOCAL_PREFS_DIR="$DRY_SCRATCH/preferences"
+else
+  if [[ ! -d "$LOCAL_PREFS_DIR/.git" ]]; then
+    log "Setting up $LOCAL_PREFS_DIR as a clone of $PREFS_REPO"
+    if ! prefs_ensure_repo "$LOCAL_PREFS_DIR" "$PREFS_REPO"; then
+      err "Could not clone $PREFS_REPO. Nothing was exported."
+      info "GitHub needs this Mac's SSH key: ssh -T git@github.com says whether it has it."
+      exit 1
+    fi
+  fi
+  if busy=$(git_in_progress "$LOCAL_PREFS_DIR"); then
+    err "$busy in $LOCAL_PREFS_DIR — resolve it first. Nothing was exported or pushed."
+    exit 1
+  fi
+  # Catch up with what another Mac pushed, when that is a fast-forward, so the
+  # push below is one too. Offline, or with commits on both sides, the snapshot
+  # goes on top of what is here, and a refused push is kept for the next run.
+  if git -C "$LOCAL_PREFS_DIR" rev-parse --verify --quiet '@{upstream}' >/dev/null 2>&1 \
+     && ! git -C "$LOCAL_PREFS_DIR" pull -q --ff-only 2>/dev/null; then
+    warn "Could not fast-forward from $PREFS_REPO (offline, or both sides have commits): snapshotting on top of what is here."
+  fi
+fi
 
 # ── Plist exports (defaults export) ──────────────────────────────────────────
 
@@ -28,17 +200,31 @@ snapshot_plist(){
     log "Skipping $name (not installed)"
     return 0
   fi
-  defaults export "$bundle_id" "$LOCAL_PREFS_DIR/$filename" || {
-    log "Warning: failed to export $name"
-    return 1
-  }
-  log "Saved $name → $LOCAL_PREFS_DIR/$filename"
+  # An installed app never set up has no domain, and `defaults export` does
+  # not fail on one: it writes an empty dict, which would replace the saved
+  # copy and be pushed. `defaults read` exits 1 for an absent or empty domain.
+  if ! defaults_timeout read "$bundle_id" >/dev/null 2>&1; then
+    log "Skipping $name (no preferences here yet — the saved copy is kept)"
+    return 0
+  fi
+  if ! defaults_timeout export "$bundle_id" "$LOCAL_PREFS_DIR/$filename"; then
+    warn "failed to export $name — skipped"
+    SNAPSHOT_SKIPPED+=("$name")
+    return 0
+  fi
+  # XML, so the commit diffs and the secret scan read text.
+  if ! plutil -convert xml1 "$LOCAL_PREFS_DIR/$filename" 2>/dev/null; then
+    warn "failed to convert $name export to xml1 — skipped"
+    SNAPSHOT_SKIPPED+=("$name")
+    return 0
+  fi
+  log "Saved $name → $filename"
 }
 
-snapshot_plist "com.googlecode.iterm2"                  "iTerm2.plist"            "/Applications/iTerm.app"            "iTerm2"
-snapshot_plist "com.rogueamoeba.Loopback"               "Loopback.plist"          "/Applications/Loopback.app"         "Loopback"
-snapshot_plist "com.rogueamoeba.soundsource"            "SoundSource.plist"       "/Applications/SoundSource.app"      "SoundSource"
-snapshot_plist "com.rogueamoeba.audiohijack"            "AudioHijack.plist"       "/Applications/Audio Hijack.app"     "Audio Hijack"
+snapshot_plist "com.googlecode.iterm2"                  "iTerm2.plist"            "$APPS/iTerm.app"            "iTerm2"
+snapshot_plist "com.rogueamoeba.Loopback"               "Loopback.plist"          "$APPS/Loopback.app"         "Loopback"
+snapshot_plist "com.rogueamoeba.soundsource"            "SoundSource.plist"       "$APPS/SoundSource.app"      "SoundSource"
+snapshot_plist "com.rogueamoeba.audiohijack"            "AudioHijack.plist"       "$APPS/Audio Hijack.app"     "Audio Hijack"
 
 # ── Application Support files ─────────────────────────────────────────────────
 
@@ -62,7 +248,7 @@ snapshot_app_support(){
       saved=$(( saved + 1 ))
     fi
   done
-  log "Saved $app_name app support ($saved file(s)) → $dest_dir"
+  log "Saved $app_name app support ($saved file(s))"
 }
 
 # Loopback routing configurations
@@ -73,4 +259,232 @@ snapshot_app_support "Loopback" "Loopback" \
 snapshot_app_support "SoundSource" "SoundSource" \
   "Presets.plist" "CustomPresets.plist" "Sources.plist" "Models.plist"
 
-log "Snapshot complete."
+# ── Commit and push ───────────────────────────────────────────────────────────
+
+cd "$LOCAL_PREFS_DIR"
+
+# Stage only snapshot outputs, never `git add .`. Pathspecs, so `git add -A`
+# stages a deletion too; `:(glob)` keeps *.plist to the top level.
+add_specs=()
+if compgen -G '*.plist' >/dev/null 2>&1 || \
+   git ls-files --error-unmatch -- ':(glob)*.plist' >/dev/null 2>&1; then
+  add_specs+=(':(glob)*.plist')
+fi
+if [[ -d app-support ]] || git ls-files --error-unmatch -- app-support >/dev/null 2>&1; then
+  add_specs+=('app-support')
+fi
+
+if (( ${#add_specs[@]} == 0 )); then
+  log "No preference files to stage."
+  exit 0
+fi
+
+git add -A -- "${add_specs[@]}"
+
+# ── Keys that change on their own ────────────────────────────────────────────
+
+# A plist whose only differences from the last commit are in these keys is left
+# out of the commit and put back as HEAD has it. The export is not filtered: a
+# plist with any other change is committed whole, these keys included, so
+# post-install restores what the app wrote.
+#
+# FILE|KEY, both globs. FILE is the path in mimac-prefs; KEY matches a key at
+# any depth. The per-app keys are mrk's, for the same apps, each earned by
+# changing on its own over sixty of its snapshots.
+PREFS_NOISE=(
+  # In every file: lib.sh's MIMAC_SELF_CHANGING_KEYS, which defaults-watch
+  # reads too.
+  "${MIMAC_SELF_CHANGING_KEYS[@]/#/*|}"
+  # iTerm2 marks its machine-local state NoSync itself
+  'iTerm2.plist|NoSync*' 'iTerm2.plist|iTerm Version'
+  # SoundSource gives its hotkeys and popover a new uuid and identifier at every
+  # save; an alias or bookmark is re-encoded on its own too, and always sits
+  # beside the path it points at, which still counts.
+  'SoundSource.plist|uuid' 'SoundSource.plist|identifier' 'SoundSource.plist|mainPopoverState'
+  'SoundSource.plist|lastKnownUpdateVersion' 'SoundSource.plist|bluetoothDevicesSeen'
+  'app-support/SoundSource/*|uuid' 'app-support/SoundSource/*|popoverState' 'app-support/SoundSource/*|alias'
+  'app-support/Loopback/*|alias' 'app-support/Loopback/*|bookmark'
+  'AudioHijack.plist|homeWindowState' 'AudioHijack.plist|homeWindowShown' 'AudioHijack.plist|AULastKnownViewSize'
+)
+
+# plist_changes PATH... — compare each plist as staged with HEAD's copy. Prints
+# "noise<TAB>PATH" for one that differs only in PREFS_NOISE keys, and
+# "real<TAB>PATH<TAB>KEYS" otherwise, KEYS being the top-level keys that changed.
+# Values are compared as what they hold: a value that is itself a plist, a keyed
+# archive or JSON is decoded first, so the same content in a new order is no
+# change. A plist either copy of which cannot be read counts as changed.
+plist_changes() {
+  python3 - "$(printf '%s\n' "${PREFS_NOISE[@]}")" "$@" <<'PYEOF'
+import fnmatch, json, plistlib, subprocess, sys
+
+rules = [tuple(r.split("|", 1)) for r in sys.argv[1].splitlines() if "|" in r]
+MISSING = object()
+
+# An NSKeyedArchiver archive, its references resolved, its dictionaries and
+# sets made order-free.
+def unarchive(d):
+    objs = d["$objects"]
+    def res(v, depth):
+        if depth > 100:
+            raise ValueError("archive too deep, or a cycle")
+        if isinstance(v, plistlib.UID):
+            return res(objs[v.data], depth + 1)
+        if isinstance(v, list):
+            return [res(x, depth + 1) for x in v]
+        if not isinstance(v, dict):
+            return v
+        r = {k: res(x, depth + 1) for k, x in v.items()}
+        ks, vs = r.get("NS.keys"), r.get("NS.objects")
+        cls = r.get("$class")
+        name = cls.get("$classname") if isinstance(cls, dict) else None
+        if isinstance(ks, list) and isinstance(vs, list) and len(ks) == len(vs):
+            if all(isinstance(k, str) for k in ks):
+                return {"$class": cls, "NS.dict": dict(zip(ks, vs))}
+            return {"$class": cls, "NS.pairs": sorted(([k, x] for k, x in zip(ks, vs)), key=repr)}
+        if name in ("NSSet", "NSMutableSet") and isinstance(vs, list):
+            r["NS.objects"] = sorted(vs, key=repr)
+        return r
+    return res(d.get("$top", {}), 0)
+
+def noisy(key, pats):
+    return any(fnmatch.fnmatchcase(str(key), p) for p in pats)
+
+def norm(v, pats):
+    if isinstance(v, bytes):
+        try:
+            if v.startswith(b"bplist"):
+                d = plistlib.loads(v)
+                if isinstance(d, dict) and d.get("$archiver") == "NSKeyedArchiver" and "$objects" in d:
+                    d = unarchive(d)
+                return ("plist", norm(d, pats))
+            if v[:1] in (b"{", b"["):
+                return ("json", norm(json.loads(v), pats))
+        except Exception:
+            pass
+        return v
+    if isinstance(v, dict):
+        return {k: norm(x, pats) for k, x in v.items() if not noisy(k, pats)}
+    if isinstance(v, list):
+        return [norm(x, pats) for x in v]
+    return v
+
+def load(spec):
+    r = subprocess.run(["git", "show", spec], capture_output=True)
+    if r.returncode != 0:
+        return None
+    try:
+        d = plistlib.loads(r.stdout)
+    except Exception:
+        return None
+    return d if isinstance(d, dict) else None
+
+for path in sys.argv[2:]:
+    old, new = load("HEAD:" + path), load(":" + path)
+    if old is None or new is None:
+        print("real\t" + path)
+        continue
+    pats = [k for f, k in rules if fnmatch.fnmatchcase(path, f)]
+    real = []
+    for k in sorted(set(old) | set(new), key=str):
+        a, b = old.get(k, MISSING), new.get(k, MISSING)
+        if a == b or noisy(k, pats):
+            continue
+        if a is not MISSING and b is not MISSING and norm(a, pats) == norm(b, pats):
+            continue
+        name = " ".join(str(k).split())
+        real.append(name if len(name) <= 60 else name[:59] + "…")
+    print(("real\t%s\t%s" % (path, ", ".join(real))) if real else "noise\t" + path)
+PYEOF
+}
+
+declare -A PLIST_KEYS=()   # path → the keys that changed, for the report
+left_out=()
+modified=()
+while IFS= read -r -d '' f; do
+  [[ "$f" == *.plist ]] && modified+=("$f")
+done < <(git diff --cached --name-only --diff-filter=M -z)
+if (( ${#modified[@]} > 0 )); then
+  if ! command -v python3 >/dev/null 2>&1; then
+    warn "python3 not found — every changed plist is committed, keys that change on their own included"
+  elif changes=$(plist_changes "${modified[@]}"); then
+    while IFS=$'\t' read -r kind path keys; do
+      case "$kind" in
+        noise) left_out+=("$path") ;;
+        real)  PLIST_KEYS["$path"]="${keys:-}" ;;
+      esac
+    done <<< "$changes"
+  else
+    warn "could not compare the changed plists with the last commit — every one is committed"
+  fi
+fi
+if (( ${#left_out[@]} > 0 )); then
+  # Index and working tree both, so ~/.mimac/preferences is left clean: a file
+  # left modified there would stop pull-prefs' --ff-only pull.
+  git checkout -q HEAD -- "${left_out[@]}"
+  log "Left out, changed only in keys that change on their own: $(printf '%s, ' "${left_out[@]}" | sed 's/, $//')"
+fi
+
+if git diff --cached --quiet; then
+  # Nothing to commit is not always nothing to push: a run whose push failed
+  # left its commit here, and after the filter above most runs find nothing
+  # new. mrk once stopped here with that commit still unpushed (its audit 20,
+  # X-1).
+  unpushed=$(unpushed_count "$REAL_PREFS_DIR")
+  if (( unpushed == 0 )); then
+    log "No changes to push."
+    exit 0
+  fi
+  if (( DRY_RUN )); then
+    log "No changes to commit. The real run would push $unpushed commit(s) that an earlier run left unpushed."
+    ok "Dry run: nothing was committed or pushed."
+    exit 0
+  fi
+  log "No changes to commit. Pushing $unpushed commit(s) that an earlier run left unpushed."
+  push_snapshot
+  exit 0
+fi
+
+# report_staged — each staged file, with a modified plist's changed keys
+report_staged() {
+  local status path n=0 more=0
+  while IFS=$'\t' read -r status path; do
+    if (( ++n > 20 )); then more=$(( more + 1 )); continue; fi
+    case "$status" in
+      A) printf '    %s (new)\n' "$path" ;;
+      D) printf '    %s (removed)\n' "$path" ;;
+      *) if [[ -n "${PLIST_KEYS[$path]:-}" ]]; then
+           printf '    %s: %s\n' "$path" "${PLIST_KEYS[$path]}"
+         else
+           printf '    %s\n' "$path"
+         fi ;;
+    esac
+  done < <(git -c core.quotepath=off diff --cached --name-status --no-renames)
+  if (( more > 0 )); then printf '    … and %d more\n' "$more"; fi
+}
+staged_count=$(git diff --cached --name-only | wc -l | tr -d ' ')
+if (( DRY_RUN )); then
+  log "Would commit $staged_count file(s):"
+else
+  log "Committing $staged_count file(s):"
+fi
+report_staged
+
+# The secret scan, over every staged file that exists (a deletion has nothing
+# to read). --no-renames, so a renamed file is read under its new name.
+changed_files=()
+while IFS= read -r -d '' f; do
+  [[ -f "$f" ]] && changed_files+=("$LOCAL_PREFS_DIR/$f")
+done < <(git diff --cached --name-only --no-renames --diff-filter=d -z)
+if (( DRY_RUN )); then
+  if (( ${#changed_files[@]} > 0 )) && ! scan_for_secrets "${changed_files[@]}"; then
+    warn "The real run would stop here and ask before it committed."
+  fi
+  ok "Dry run: nothing was committed or pushed."
+  exit 0
+fi
+if (( ${#changed_files[@]} > 0 )); then
+  require_clean_secrets "${changed_files[@]}" || exit 1
+fi
+
+git commit -q -m "snapshot: $(date '+%Y-%m-%d %H:%M')"
+push_snapshot

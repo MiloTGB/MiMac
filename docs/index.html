@@ -468,8 +468,8 @@ symlinked from here, so editing the repo edits the live config</td>
 </tr>
 <tr>
 <td><code>~/.mimac/</code></td>
-<td>Local state: rollback scripts, dotfile backups, app-preference
-snapshots</td>
+<td>Local state: rollback scripts, dotfile backups, and a clone of
+<code>mimac-prefs</code>, the app-preference snapshots</td>
 </tr>
 </tbody>
 </table>
@@ -552,6 +552,8 @@ relink what the pulled commits changed. The rebuild waits for step 5
 version</li>
 <li><code>make build-tools</code> — rebuild the Go TUIs (about a second
 on Apple Silicon)</li>
+<li><code>make snapshot-prefs</code> — export app preferences and push
+any that changed to <code>mimac-prefs</code></li>
 <li><code>make doctor</code></li>
 </ol>
 <h2 id="health-check-make-doctor">Health Check
@@ -782,16 +784,39 @@ missing, rebuild it with <code>make build-tools</code>.</p>
 </blockquote>
 <h2 id="keeping-app-preferences-current-make-snapshot-prefs">Keeping App
 Preferences Current (<code>make snapshot-prefs</code>)</h2>
-<p>After configuring an app, run <code>make snapshot-prefs</code> to
-capture its preferences.</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> snapshot-prefs</span></code></pre></div>
+<p>App preferences go to <code>mimac-prefs</code>, a private GitHub
+repository, so a new or erased Mac gets them back.
+<code>~/.mimac/preferences</code> is a clone of it.
+<code>make maintain</code> takes a snapshot every week; after
+configuring an app, take one yourself:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> snapshot-prefs           <span class="co"># export, commit and push</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> snapshot-prefs ARGS=-n   <span class="co"># preview: what would be committed, and each plist&#39;s changed keys</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> pull-prefs               <span class="co"># clone or fast-forward ~/.mimac/preferences from mimac-prefs</span></span></code></pre></div>
 <ol type="1">
+<li>Catches up with anything another Mac pushed, when that is a
+fast-forward</li>
 <li>Exports the preference plist for each managed app (iTerm2, Loopback,
-SoundSource, Audio Hijack) using <code>defaults export</code></li>
-<li>Copies Loopback and SoundSource Application Support files</li>
-<li>Saves everything to <code>~/.mimac/preferences/</code>, where Phase
-3 imports it from</li>
+SoundSource, Audio Hijack) with <code>defaults export</code>, as XML so
+a commit reads as text. An app with no preferences yet keeps its saved
+copy</li>
+<li>Copies the Loopback and SoundSource Application Support files</li>
+<li>Leaves out a plist that changed only in keys that change on their
+own — window positions, update-check times, launch counters — so those
+make no commit</li>
+<li>Scans what it is about to commit for anything that looks like a
+token or key, and stops to ask if it finds one</li>
+<li>Commits and pushes. A push that fails is said, and the commit kept;
+the next run pushes it, even when it finds nothing new. “No changes to
+push.” means <code>mimac-prefs</code> has everything</li>
 </ol>
+<p>The license registrations of Loopback and Audio Hijack — a code and a
+name in each one’s preferences — are pushed with them, on purpose: a new
+Mac gets them with the rest. Phase 3 imports a plist only for an app
+that has none yet, so a Mac already set up keeps its own.</p>
+<p>From August to October 2026 the snapshot stayed on this Mac; the
+first run after that takes the repository’s history beneath whatever
+<code>~/.mimac/preferences</code> holds, and commits only what
+differs.</p>
 <h2 id="keeping-a-macos-setting-defaults-watch">Keeping a macOS Setting
 (<code>defaults-watch</code>)</h2>
 <p>A setting changed in System Settings is the one change no MiMac
@@ -1028,9 +1053,10 @@ opens extension install URLs on request</li>
 releases if missing</li>
 <li><strong>App defaults:</strong> Applies <code>defaults write</code>
 settings for Audio Hijack and Rogue Amoeba update settings</li>
-<li><strong>Plist imports:</strong> Imports snapshots from
-<code>~/.mimac/preferences/</code>; skips any app that already has a
-preferences file (non-destructive)</li>
+<li><strong>Plist imports:</strong> Clones <code>mimac-prefs</code> into
+<code>~/.mimac/preferences/</code> first when GitHub already has this
+Mac’s SSH key (<code>pull-prefs</code>), then imports from it; skips any
+app that already has a preferences file (non-destructive)</li>
 <li><strong>App Support restore:</strong> Restores Loopback and
 SoundSource configuration files (non-destructive)</li>
 <li><strong>Login items:</strong> Registers noTunes, SoundSource and
@@ -1092,10 +1118,11 @@ Mac</h1>
 <span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> ~/MiMac</span>
 <span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> install        <span class="co"># Phase 1 — then open a new terminal (or exec zsh)</span></span>
 <span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> brew           <span class="co"># Phase 2 — the long one</span></span>
-<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> post-install   <span class="co"># Phase 3</span></span>
-<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> build-tools    <span class="co"># mimac-picker (needed by make sync), mimac-status</span></span>
-<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> dock</span>
-<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> doctor         <span class="co"># Confirm everything landed; ARGS=--fix for the safe repairs</span></span></code></pre></div>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>                    <span class="co"># Add this Mac&#39;s SSH key to GitHub, so Phase 3 can fetch mimac-prefs</span></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> post-install   <span class="co"># Phase 3 — runs pull-prefs, then imports the app preferences</span></span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> build-tools    <span class="co"># mimac-picker (needed by make sync), mimac-status</span></span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> dock</span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> doctor         <span class="co"># Confirm everything landed; ARGS=--fix for the safe repairs</span></span></code></pre></div>
 <p><code>make all</code> runs Phases 1–3 and <code>build-tools</code> in
 one go. Phase 3 and <code>build-tools</code> find the Homebrew Phase 2
 installed even in the shell that ran it, so no second new terminal is
@@ -1135,7 +1162,7 @@ from <code>~/</code> lists these first, then everything from
 <tr>
 <td><code>make maintain</code></td>
 <td>Weekly upkeep: pull, relink, update, macOS updates, rebuild TUIs,
-doctor</td>
+snapshot prefs, doctor</td>
 </tr>
 <tr>
 <td><code>make doctor</code></td>
@@ -1167,7 +1194,13 @@ pulled commits changed</td>
 </tr>
 <tr>
 <td><code>make snapshot-prefs</code></td>
-<td>Export app preferences</td>
+<td>Export app preferences and push them to <code>mimac-prefs</code>
+(<code>ARGS=-n</code> to preview)</td>
+</tr>
+<tr>
+<td><code>make pull-prefs</code></td>
+<td>Clone or fast-forward <code>~/.mimac/preferences</code> from
+<code>mimac-prefs</code></td>
 </tr>
 <tr>
 <td><code>make build-tools</code></td>
@@ -1348,8 +1381,9 @@ if they are not installed yet. Both come from <code>sync --check</code>,
 so the panel and <code>sync</code> agree.</li>
 <li><code>~/MiMac</code>: uncommitted changes, commits not pushed
 (<code>git push</code>), a branch with no upstream</li>
-<li>How old the app-preferences snapshot in
-<code>~/.mimac/preferences</code> is (information only)</li>
+<li>App-preference snapshot commits <code>mimac-prefs</code> lacks
+(<code>make snapshot-prefs</code>), and when a setting last changed
+(information only)</li>
 </ul>
 <p><strong>Upkeep</strong> — what has fallen behind:</p>
 <ul>
@@ -1400,7 +1434,8 @@ problem shows its detail.</p>
 <tbody>
 <tr>
 <td><code>~/.mimac/preferences/</code></td>
-<td>Local snapshot of app plists + App Support files</td>
+<td>A clone of <code>mimac-prefs</code>: app plists and App Support
+files</td>
 </tr>
 <tr>
 <td><code>~/.mimac/backups/</code></td>
@@ -1499,8 +1534,19 @@ it</td>
 </tr>
 <tr>
 <td>post-install skips plist imports</td>
-<td>No snapshot in <code>~/.mimac/preferences</code> yet — run
-<code>make snapshot-prefs</code> on a configured Mac</td>
+<td><code>~/.mimac/preferences</code> is not a clone yet: add the SSH
+key to GitHub, <code>make pull-prefs</code>, then
+<code>make post-install</code> again</td>
+</tr>
+<tr>
+<td><code>snapshot-prefs</code> says the push failed</td>
+<td>The commit is kept and the next run pushes it.
+<code>ssh -T git@github.com</code> checks the key</td>
+</tr>
+<tr>
+<td><code>snapshot-prefs</code> stops at “possible secret”</td>
+<td>It found something that looks like a token in a file it was about to
+commit. Look at the line it names before answering</td>
 </tr>
 <tr>
 <td>mimac-picker not rendering</td>

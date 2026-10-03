@@ -281,10 +281,11 @@ fi
 # Preferences directory setup                                                 #
 ###############################################################################
 
-LOCAL_PREFS_DIR="$HOME/.mimac/preferences"
+# LOCAL_PREFS_DIR is lib.sh's: ~/.mimac/preferences, a clone of mimac-prefs.
 mkdir -p "$LOCAL_PREFS_DIR"
 
-# Switch MiMac repo remote from HTTPS to SSH if possible
+# Switch MiMac repo remote from HTTPS to SSH if possible, and fetch the app
+# preferences from mimac-prefs, which needs the same key, before importing them.
 if ssh -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
   _current_url=$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null || true)
   if [[ "$_current_url" == https://* ]]; then
@@ -292,6 +293,11 @@ if ssh -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
     git -C "$REPO_ROOT" remote set-url origin "$_ssh_url"
     log "Switched MiMac remote to SSH: $_ssh_url"
   fi
+  if [[ ! -d "$LOCAL_PREFS_DIR/.git" ]]; then
+    "$SCRIPT_DIR/pull-prefs" || warn "Could not fetch app preferences — make pull-prefs, then make post-install again"
+  fi
+elif [[ ! -d "$LOCAL_PREFS_DIR/.git" ]]; then
+  logskip "app preferences from mimac-prefs" "GitHub does not have this Mac's SSH key yet — add it, then make pull-prefs"
 fi
 
 ###############################################################################

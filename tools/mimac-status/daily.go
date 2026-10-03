@@ -325,17 +325,42 @@ func checkUnrecorded(repoRoot, home string, drift brewDrift) group {
 		}
 	}
 
-	// App preferences: post-install imports them from ~/.mimac/preferences.
-	// Information only: the snapshot stays on this Mac until it is carried
-	// over, so its age is worth knowing and not a fault.
-	prefsDir := filepath.Join(home, ".mimac", "preferences")
-	if t, ok := newestFile(prefsDir); ok {
-		lines = append(lines, slFix(sevInfo, "App preferences snapshotted "+ago(now().Sub(t)), fixSnapshot))
-	} else {
-		lines = append(lines, slFix(sevInfo, "App preferences never snapshotted to "+tilde(home, prefsDir), fixSnapshot))
-	}
+	lines = append(lines, prefsLines(home)...)
 
 	return group{"Unrecorded", linesSev(lines), lines, firstFix(lines)}
+}
+
+// prefsLines reports ~/.mimac/preferences, which snapshot-prefs commits and
+// pushes to mimac-prefs and post-install imports from. A snapshot commit the
+// remote lacks is what the next Mac would not get, so it warns. When it is a
+// clone, the age of its last commit is the last time a setting changed, and is
+// information; before it is one, the newest file's age is.
+func prefsLines(home string) []statusLine {
+	prefsDir := filepath.Join(home, ".mimac", "preferences")
+	if fi, err := os.Stat(filepath.Join(prefsDir, ".git")); err == nil && fi.IsDir() {
+		var lines []statusLine
+		s := readRepoState(prefsDir)
+		unpushed := s.unpushed
+		if s.noUpstream {
+			n, _ := git(prefsDir, "rev-list", "--count", "HEAD")
+			unpushed, _ = strconv.Atoi(n)
+		}
+		if unpushed > 0 {
+			lines = append(lines, slFix(sevWarn,
+				"App preferences: "+plural(unpushed, "snapshot commit", "snapshot commits")+" not pushed to mimac-prefs", fixSnapshot))
+		}
+		if ct, err := git(prefsDir, "log", "-1", "--format=%ct"); err == nil {
+			if sec, err := strconv.ParseInt(ct, 10, 64); err == nil {
+				lines = append(lines, slFix(sevInfo,
+					"App preferences: last change recorded "+ago(now().Sub(time.Unix(sec, 0))), fixSnapshot))
+			}
+		}
+		return lines
+	}
+	if t, ok := newestFile(prefsDir); ok {
+		return []statusLine{slFix(sevInfo, "App preferences snapshotted "+ago(now().Sub(t))+", never pushed: make snapshot-prefs sets up mimac-prefs", fixSnapshot)}
+	}
+	return []statusLine{slFix(sevInfo, "App preferences never snapshotted to "+tilde(home, prefsDir), fixSnapshot)}
 }
 
 // ── Upkeep ────────────────────────────────────────────────────────────────

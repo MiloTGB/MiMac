@@ -283,5 +283,215 @@ kill -s $sig \$\$" "$sig"
   return "$rc"
 }
 
+###############################################################################
+# App preferences                                                             #
+###############################################################################
+
+# The private repository app preferences are pushed to and pulled from, and
+# where they live on this Mac. PREFS_REPO names another remote, for a test.
+: "${PREFS_REPO:=git@github.com:MiloTGB/mimac-prefs.git}"
+# shellcheck disable=SC2034  # read by the scripts that source this file
+LOCAL_PREFS_DIR="$STATE_DIR/preferences"
+
+# prefs_ensure_repo DIR URL — make DIR a clone of URL, keeping what DIR holds.
+#
+# Absent or empty, DIR is cloned into: post-install creates it empty, and a
+# repository started there with git init would share no history with the
+# remote, whose next push it would refuse. A directory of files from the
+# local-only snapshots MiMac made from 2026-08 to 2026-10 takes the remote's
+# history beneath its files, untouched, so the next snapshot commits only what
+# differs; a file it lacks is restored from the remote, since its absence there
+# means it was never exported, not that it was removed. Without that, the next
+# snapshot committed each one as a deletion. Returns 1, after git's own
+# message, when the clone fails.
+prefs_ensure_repo() {
+  local dir=$1 url=$2 tmp
+  [[ -d "$dir/.git" ]] && return 0
+  if [[ ! -d "$dir" || -z "$(ls -A "$dir" 2>/dev/null)" ]]; then
+    git clone -q "$url" "$dir" || return 1
+    return 0
+  fi
+  tmp=$(mimac_mktemp_d) || return 1
+  if ! git clone -q --no-checkout "$url" "$tmp/repo"; then
+    rm -rf "$tmp"
+    return 1
+  fi
+  mv "$tmp/repo/.git" "$dir/.git" && rm -rf "$tmp" || return 1
+  # An empty remote has no commit to reset to.
+  if git -C "$dir" rev-parse --verify --quiet HEAD >/dev/null; then
+    git -C "$dir" reset -q
+    git -C "$dir" ls-files -d -z | xargs -0 git -C "$dir" checkout -q -- 2>/dev/null || true
+  fi
+}
+
+# MIMAC_SELF_CHANGING_KEYS — the preference keys an app, or macOS for it,
+# rewrites without anyone changing a setting, in any domain: globs for a key's
+# name. snapshot-prefs leaves a plist out of its commit when nothing but such
+# keys changed, and defaults-watch lists a change to one apart from the
+# settings. One list, read by both, as in mrk, where two copies had drifted
+# apart (its audit 20, X-9). Each adds what is its own: snapshot-prefs its
+# per-app keys, defaults-watch the toolbar layout, which it only lists apart.
+# The keys are mrk's, each earned by changing on its own in its snapshots.
+# shellcheck disable=SC2034  # read by the scripts that source this file
+MIMAC_SELF_CHANGING_KEYS=(
+  # Sparkle's update checks
+  'SU*Time' 'SU*Date' 'SUUpdateGroupIdentifier' 'SUUpdateRelaunchingMarker'
+  # Where macOS put a window, a split view, a menu bar item or the file panel
+  'NSWindow Frame *' 'NSSplitView Subview Frames *' 'NSStatusItem Preferred Position *'
+  'NSNav*' 'NSOSP*' '*[wW]indowFrame'
+  # Launch counters, and the record of the versions that have run
+  'launchCount' '*LaunchCount' '*RunCount'
+  'versionHighestLaunched' 'versionLastLaunched'
+)
+
+# git_in_progress REPO — print what REPO is in the middle of and return 0, or
+# return 1 when it is idle. snapshot-prefs stages with `git add -A` and then
+# commits, which in a repository stopped mid-merge marks the conflicted files
+# resolved, markers and all, and concludes the merge. From mrk.
+git_in_progress() {
+  local repo=$1 gd
+  gd=$(git -C "$repo" rev-parse --absolute-git-dir 2>/dev/null) || return 1
+  if   [[ -e "$gd/MERGE_HEAD" ]];                   then echo "merge in progress"
+  elif [[ -e "$gd/CHERRY_PICK_HEAD" ]];             then echo "cherry-pick in progress"
+  elif [[ -e "$gd/REVERT_HEAD" ]];                  then echo "revert in progress"
+  elif [[ -d "$gd/rebase-merge" ]];                 then echo "rebase in progress"
+  elif [[ -e "$gd/rebase-apply/applying" ]];        then echo "git am in progress"
+  elif [[ -d "$gd/rebase-apply" ]];                 then echo "rebase in progress"
+  elif [[ -e "$gd/BISECT_LOG" ]];                   then echo "bisect in progress"
+  elif [[ -n "$(git -C "$repo" ls-files -u 2>/dev/null)" ]]; then echo "unresolved conflicts"
+  else return 1
+  fi
+}
+
+###############################################################################
+# Secret scanning                                                             #
+###############################################################################
+#
+# snapshot-prefs pushes app preferences to GitHub, and an app can keep a token
+# in its plist. These two functions are the gate before that commit. They were
+# MiMac's own, gating syncall, and came out with it (7342f60); restored here.
+# License registrations (Rogue Amoeba's registrationInfo, a Code and a Name)
+# are pushed on purpose, and match nothing below.
+
+# A suggestive plist key name AND a substantial <string> value. The name alone
+# is not enough: apps store booleans and integers under names like
+# ExportPassword and AiMaxTokens, and flagging those trains you to dismiss the
+# gate.
+_scan_plist_key_values() {
+  awk '
+    /<[kK][eE][yY]>/ {
+      if (tolower($0) ~ /<key>[^<]*(api[_-]?key|token|secret|password|passphrase|credential)s?<\/key>/) {
+        keyline = $0; keyno = NR; pending = 1
+      } else { pending = 0 }
+      next
+    }
+    pending {
+      if (match($0, /<string>[^<]*<\/string>/)) {
+        # inner text = match minus "<string>" (8) and "</string>" (9)
+        if (RLENGTH - 17 >= 12) printf "%d:%s\n", keyno, keyline
+      }
+      pending = 0
+    }
+  ' "$1" 2>/dev/null || true
+}
+
+# Returns 0 when the files are clean, 1 when anything looks like a secret.
+scan_for_secrets() {
+  (( $# == 0 )) && return 0
+
+  # Case-INSENSITIVE: field names, and material that identifies itself.
+  local -a patterns_i=(
+    '-----BEGIN ([A-Z0-9]+ )?PRIVATE KEY-----'
+    '(api[_-]?key|apikey|secret[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret|password|passphrase|token)['\''"]?[[:space:]]*[:=][[:space:]]*['\''"]?[A-Za-z0-9_./+-]{12,}'
+    'Bearer[[:space:]]+[A-Za-z0-9._-]{20,}'
+  )
+
+  # Case-SENSITIVE: vendor prefixes are defined by their exact casing, and
+  # matching them with -i turns them into base64 noise — `AIza…` folded to
+  # case-insensitive matches <data> blobs in real plists.
+  local -a patterns_s=(
+    'sk-(ant-)?[A-Za-z0-9_-]{20,}'          # OpenAI sk- / sk-proj-, Anthropic sk-ant-
+    'gh[pousr]_[A-Za-z0-9]{30,}'            # GitHub classic PAT / OAuth / refresh
+    'github_pat_[A-Za-z0-9_]{20,}'          # GitHub fine-grained PAT
+    'AKIA[0-9A-Z]{16}'                      # AWS access key id
+    'xox[baprs]-[A-Za-z0-9-]{10,}'          # Slack
+    'AIza[0-9A-Za-z_-]{35}'                 # Google API key
+  )
+  local pat file hits=0 line target tmp_xml out rc pass gflags
+  local -a active
+  for file in "$@"; do
+    [[ -f "$file" ]] || continue
+
+    # Binary plists are not greppable — the patterns below would silently match
+    # nothing. Scan an xml1 copy; the stored file is left untouched.
+    target="$file"
+    tmp_xml=""
+    if [[ "$(head -c 8 "$file" 2>/dev/null)" == "bplist00" ]]; then
+      tmp_xml="$(mimac_mktemp)"
+      if plutil -convert xml1 -o "$tmp_xml" "$file" 2>/dev/null; then
+        target="$tmp_xml"
+      else
+        warn "could not convert $file to xml1 — scanning raw bytes"
+        rm -f "$tmp_xml"
+        tmp_xml=""
+      fi
+    fi
+
+    for pass in i s; do
+      if [[ "$pass" == i ]]; then active=("${patterns_i[@]}"); gflags=-Ein
+      else                        active=("${patterns_s[@]}"); gflags=-En
+      fi
+      for pat in "${active[@]}"; do
+        # -e because several patterns begin with `-`. rc 0 = match, 1 = no
+        # match, >1 = grep could not run the pattern at all.
+        rc=0
+        out=$(grep "$gflags" -e "$pat" "$target" 2>/dev/null) || rc=$?
+        if (( rc > 1 )); then
+          # A pattern that does not compile would otherwise report "clean". For
+          # a gate that blocks a push, failing closed is the only safe reading.
+          err "secret scan FAILED on ${file} (grep rc=${rc}) — pattern: ${pat:0:60}"
+          hits=1
+          continue
+        fi
+        while IFS= read -r line; do
+          [[ -z "$line" ]] && continue
+          err "possible secret in ${file}: ${line:0:120}"
+          hits=1
+        done <<< "$out"
+      done
+    done
+
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      err "possible secret in ${file}: ${line:0:120}"
+      hits=1
+    done < <(_scan_plist_key_values "$target")
+
+    [[ -n "$tmp_xml" ]] && rm -f "$tmp_xml"
+  done
+  return "$hits"
+}
+
+# Wraps scan_for_secrets with the confirmation. Returns 0 to proceed.
+# Lowercases with `tr` rather than ${x,,} so this sources cleanly under the
+# bash 3.2 that macOS ships.
+require_clean_secrets() {
+  scan_for_secrets "$@" && return 0
+  warn "Potential secrets detected in files above."
+  if (( ${NONINTERACTIVE:-0} )); then
+    err "Aborting (NONINTERACTIVE=1)."
+    return 1
+  fi
+  if [[ ! -t 0 ]]; then
+    err "Aborting (not a TTY — cannot confirm)."
+    return 1
+  fi
+  printf '%s  Commit and push anyway?%s ' "$_YLW" "$_R" >&2
+  local _ans
+  read -r _ans </dev/tty
+  _ans=$(printf '%s' "$_ans" | tr '[:upper:]' '[:lower:]')
+  [[ "$_ans" =~ ^(y|yes)$ ]]
+}
+
 # Ensure DRY_RUN is defined (default 0 if not set by caller)
 : "${DRY_RUN:=0}"

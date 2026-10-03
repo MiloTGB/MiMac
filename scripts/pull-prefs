@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# MiMac pull-prefs — clone or update ~/.mimac/preferences from mimac-prefs.
+#
+# On a new Mac, after its SSH key is on GitHub and before post-install, so
+# post-install has the preferences to import; post-install runs this itself
+# when ~/.mimac/preferences is not a clone yet and GitHub accepts the key.
+# Removed with the push in 9fd8246 and restored with it, from mrk.
+
+_self="${BASH_SOURCE[0]}"
+while [[ -L "$_self" ]]; do
+  _dir="$(cd "$(dirname "$_self")" && pwd)"
+  _self="$(readlink "$_self")"
+  [[ "$_self" != /* ]] && _self="$_dir/$_self"
+done
+SCRIPT_DIR="$(cd "$(dirname "$_self")" && pwd)"
+
+# shellcheck source=lib.sh
+source "$SCRIPT_DIR/lib.sh"
+
+usage() {
+  cat <<'EOF'
+pull-prefs — clone or update ~/.mimac/preferences from the mimac-prefs repo
+
+Usage:
+  pull-prefs [--help | -h]
+
+pull-prefs takes no options other than --help. It clones the private
+mimac-prefs repository into ~/.mimac/preferences, keeping any files already
+there, or fast-forwards it when it is a clone already. It never merges: a clone
+with commits of its own is left as it is, and said so. Set PREFS_REPO to point
+at a different remote.
+EOF
+}
+
+case "${1:-}" in
+  -h|--help) usage; exit 0 ;;
+  ?*)        usage >&2; printf '\nunknown argument: %s\n' "$1" >&2; exit 2 ;;
+esac
+
+if [[ -d "$LOCAL_PREFS_DIR/.git" ]]; then
+  if busy=$(git_in_progress "$LOCAL_PREFS_DIR"); then
+    err "$busy in $LOCAL_PREFS_DIR — resolve it first."
+    exit 1
+  fi
+  log "Updating $LOCAL_PREFS_DIR from $PREFS_REPO"
+  if ! git -C "$LOCAL_PREFS_DIR" pull -q --ff-only; then
+    err "Could not fast-forward $LOCAL_PREFS_DIR. Nothing was changed."
+    info "It may hold snapshot commits of its own: make snapshot-prefs pushes them."
+    exit 1
+  fi
+  ok "Preferences up to date in $LOCAL_PREFS_DIR"
+else
+  log "Cloning $PREFS_REPO into $LOCAL_PREFS_DIR"
+  mkdir -p "$(dirname "$LOCAL_PREFS_DIR")"
+  if ! prefs_ensure_repo "$LOCAL_PREFS_DIR" "$PREFS_REPO"; then
+    err "Could not clone $PREFS_REPO."
+    info "GitHub needs this Mac's SSH key: ssh -T git@github.com says whether it has it."
+    exit 1
+  fi
+  ok "Preferences in $LOCAL_PREFS_DIR. make post-install imports them."
+fi

@@ -21,7 +21,7 @@ help: ## Show available make commands
 
 # Daily use first — this is the list `make help` shows from ~/.
 
-maintain: ## Weekly upkeep: pull, relink, update packages + macOS, rebuild TUIs, doctor
+maintain: ## Weekly upkeep: pull, relink, update packages + macOS, rebuild TUIs, snapshot prefs, doctor
 	@$(MAKE) -C $(MIMAC) maintain --no-print-directory
 
 doctor: ## Find what is broken or drifting on this Mac (ARGS=--fix to repair the safe items)
@@ -42,8 +42,8 @@ sync: ## Sync installed Homebrew packages into the Brewfile  (ARGS=-c to commit,
 pull: ## Fast-forward MiMac to origin
 	@$(MAKE) -C $(MIMAC) pull --no-print-directory
 
-snapshot-prefs: ## Export app preferences
-	@$(MAKE) -C $(MIMAC) snapshot-prefs --no-print-directory
+snapshot-prefs: ## Export app preferences and push them to mimac-prefs (ARGS=-n to preview)
+	@$(MAKE) -C $(MIMAC) snapshot-prefs ARGS="$(ARGS)" --no-print-directory
 
 build-tools: ## Rebuild the Go TUIs (mimac-picker, mimac-status)
 	@$(MAKE) -C $(MIMAC) build-tools --no-print-directory

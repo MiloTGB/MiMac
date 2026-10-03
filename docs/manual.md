@@ -14,7 +14,7 @@ settings and login items — and the commands that keep all of that healthy day 
 |---|---|
 | `~/MiMac/` | This repo ([MiloTGB/MiMac](https://github.com/MiloTGB/MiMac)). Dotfiles are symlinked from here, so editing the repo edits the live config |
 | `~/bin/` | MiMac's commands, symlinked from `scripts/` and `bin/` |
-| `~/.mimac/` | Local state: rollback scripts, dotfile backups, app-preference snapshots |
+| `~/.mimac/` | Local state: rollback scripts, dotfile backups, and a clone of `mimac-prefs`, the app-preference snapshots |
 
 Every command is idempotent: run it as often as you like, and re-running one is how you
 repair what it set up.
@@ -54,7 +54,8 @@ Runs, in order, carrying on past a step that fails so that `doctor` always gets 
 3. `make update` — topgrade, and its verdict (below)
 4. `make updates` — macOS updates for the installed version
 5. `make build-tools` — rebuild the Go TUIs (about a second on Apple Silicon)
-6. `make doctor`
+6. `make snapshot-prefs` — export app preferences and push any that changed to `mimac-prefs`
+7. `make doctor`
 
 ## Health Check (`make doctor`)
 
@@ -207,15 +208,35 @@ run (`ARGS=-n`) only says what it would add. Ported from mrk.
 
 ## Keeping App Preferences Current (`make snapshot-prefs`)
 
-After configuring an app, run `make snapshot-prefs` to capture its preferences.
+App preferences go to `mimac-prefs`, a private GitHub repository, so a new or erased Mac gets
+them back. `~/.mimac/preferences` is a clone of it. `make maintain` takes a snapshot every week;
+after configuring an app, take one yourself:
 
 ```bash
-make snapshot-prefs
+make snapshot-prefs           # export, commit and push
+make snapshot-prefs ARGS=-n   # preview: what would be committed, and each plist's changed keys
+make pull-prefs               # clone or fast-forward ~/.mimac/preferences from mimac-prefs
 ```
 
-1. Exports the preference plist for each managed app (iTerm2, Loopback, SoundSource, Audio Hijack) using `defaults export`
-2. Copies Loopback and SoundSource Application Support files
-3. Saves everything to `~/.mimac/preferences/`, where Phase 3 imports it from
+1. Catches up with anything another Mac pushed, when that is a fast-forward
+2. Exports the preference plist for each managed app (iTerm2, Loopback, SoundSource, Audio
+   Hijack) with `defaults export`, as XML so a commit reads as text. An app with no preferences
+   yet keeps its saved copy
+3. Copies the Loopback and SoundSource Application Support files
+4. Leaves out a plist that changed only in keys that change on their own — window positions,
+   update-check times, launch counters — so those make no commit
+5. Scans what it is about to commit for anything that looks like a token or key, and stops to
+   ask if it finds one
+6. Commits and pushes. A push that fails is said, and the commit kept; the next run pushes it,
+   even when it finds nothing new. "No changes to push." means `mimac-prefs` has everything
+
+The license registrations of Loopback and Audio Hijack — a code and a name in each one's
+preferences — are pushed with them, on purpose: a new Mac gets them with the rest. Phase 3
+imports a plist only for an app that has none yet, so a Mac already set up keeps its own.
+
+From August to October 2026 the snapshot stayed on this Mac; the first run after that takes the
+repository's history beneath whatever `~/.mimac/preferences` holds, and commits only what
+differs.
 
 ## Keeping a macOS Setting (`defaults-watch`)
 
@@ -366,7 +387,7 @@ Configures installed apps. Run after Phase 2, and again after installing an app 
 - **Browsers:** Applies Chrome/Brave managed policies; opens extension install URLs on request
 - **Companion app:** Installs Barkeep from its GitHub releases if missing
 - **App defaults:** Applies `defaults write` settings for Audio Hijack and Rogue Amoeba update settings
-- **Plist imports:** Imports snapshots from `~/.mimac/preferences/`; skips any app that already has a preferences file (non-destructive)
+- **Plist imports:** Clones `mimac-prefs` into `~/.mimac/preferences/` first when GitHub already has this Mac's SSH key (`pull-prefs`), then imports from it; skips any app that already has a preferences file (non-destructive)
 - **App Support restore:** Restores Loopback and SoundSource configuration files (non-destructive)
 - **Login items:** Registers noTunes, SoundSource and Loopback
 - **LaunchAgents:** Installs and loads the scheduled maintenance jobs (see below)
@@ -407,7 +428,8 @@ git clone https://github.com/MiloTGB/MiMac.git ~/MiMac
 cd ~/MiMac
 make install        # Phase 1 — then open a new terminal (or exec zsh)
 make brew           # Phase 2 — the long one
-make post-install   # Phase 3
+                    # Add this Mac's SSH key to GitHub, so Phase 3 can fetch mimac-prefs
+make post-install   # Phase 3 — runs pull-prefs, then imports the app preferences
 make build-tools    # mimac-picker (needed by make sync), mimac-status
 make dock
 make doctor         # Confirm everything landed; ARGS=--fix for the safe repairs
@@ -438,14 +460,15 @@ from `~/MiMac/`. Any other target is forwarded to `~/MiMac` too, with its `ARGS`
 
 | Command | Description |
 |---|---|
-| `make maintain` | Weekly upkeep: pull, relink, update, macOS updates, rebuild TUIs, doctor |
+| `make maintain` | Weekly upkeep: pull, relink, update, macOS updates, rebuild TUIs, snapshot prefs, doctor |
 | `make doctor` | Health check (`ARGS=--fix` to repair the safe items) |
 | `make update` | Upgrade all packages (topgrade) |
 | `make updates` | macOS updates for this version only (`ARGS=-n` to preview) |
 | `make status` | The dashboard's panels as text (`mimac-status --plain`) |
 | `make sync` | Sync installed Homebrew packages into the Brewfile (`ARGS=-c` commit, `ARGS=-n` dry run) |
 | `make pull` | Fast-forward MiMac to origin, then rebuild and relink what the pulled commits changed |
-| `make snapshot-prefs` | Export app preferences |
+| `make snapshot-prefs` | Export app preferences and push them to `mimac-prefs` (`ARGS=-n` to preview) |
+| `make pull-prefs` | Clone or fast-forward `~/.mimac/preferences` from `mimac-prefs` |
 | `make build-tools` | Rebuild the Go TUIs |
 | `make manual` | Regenerate `docs/index.html` |
 
@@ -507,7 +530,8 @@ selected panel's first one, after asking. Ported from mrk's `mrk-status`.
   `~/.mimac/sync-ignore`, and Brewfile entries not installed — `make sync-clean` if you removed them, `make brew` if they are not
   installed yet. Both come from `sync --check`, so the panel and `sync` agree.
 - `~/MiMac`: uncommitted changes, commits not pushed (`git push`), a branch with no upstream
-- How old the app-preferences snapshot in `~/.mimac/preferences` is (information only)
+- App-preference snapshot commits `mimac-prefs` lacks (`make snapshot-prefs`), and when a
+  setting last changed (information only)
 
 **Upkeep** — what has fallen behind:
 
@@ -541,7 +565,7 @@ MiMac writes runtime state to `~/.mimac/` and `~/.cache/mimac/`:
 
 | File / Directory | Purpose |
 |---|---|
-| `~/.mimac/preferences/` | Local snapshot of app plists + App Support files |
+| `~/.mimac/preferences/` | A clone of `mimac-prefs`: app plists and App Support files |
 | `~/.mimac/backups/` | Timestamped backups of whatever setup replaced with a dotfile link: a file, a directory, or a link pointing elsewhere |
 | `~/.mimac/sync-ignore` | Homebrew packages `make sync` never offers, and `status` and `doctor` never report |
 | `~/.mimac/defaults-rollback.sh` | Undo every `defaults write` MiMac made |
@@ -572,7 +596,9 @@ bash ~/.mimac/defaults-rollback.sh
 | `make update` ends in `Error 1` | Read the line above it: it names the step that failed, and says whether the rest ran |
 | `make updates` says it is not installing a macOS version | By design — major upgrades are done by hand in System Settings |
 | topgrade appears to hang | Check `~/.config/topgrade.toml` still links to `assets/topgrade.toml`, which disables the step that suspends it |
-| post-install skips plist imports | No snapshot in `~/.mimac/preferences` yet — run `make snapshot-prefs` on a configured Mac |
+| post-install skips plist imports | `~/.mimac/preferences` is not a clone yet: add the SSH key to GitHub, `make pull-prefs`, then `make post-install` again |
+| `snapshot-prefs` says the push failed | The commit is kept and the next run pushes it. `ssh -T git@github.com` checks the key |
+| `snapshot-prefs` stops at "possible secret" | It found something that looks like a token in a file it was about to commit. Look at the line it names before answering |
 | mimac-picker not rendering | Rebuild: `make build-tools` |
 | `~/bin` not on PATH | `make doctor ARGS=--fix` adds it to `.zshrc` |
 | Brewfile entry shows missing | Package name may differ from formula name; check with `brew info <pkg>` |

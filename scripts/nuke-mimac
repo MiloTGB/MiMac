@@ -457,6 +457,16 @@ fi
 
 # Remove .mimac state directory
 if (( do_basic_cleanup )) && [[ -d "$HOME/.mimac" ]]; then
+  # Snapshot commits mimac-prefs lacks go to the Trash with the rest, and to the
+  # backup above: recoverable, but not where the next Mac pulls from.
+  _prefs="$HOME/.mimac/preferences"
+  if [[ -d "$_prefs/.git" ]]; then
+    _unpushed=$(git -C "$_prefs" rev-list --count '@{upstream}..HEAD' 2>/dev/null || echo 0)
+    if [[ "$_unpushed" =~ ^[0-9]+$ ]] && (( _unpushed > 0 )); then
+      warn "$_unpushed preferences snapshot commit(s) were never pushed to mimac-prefs."
+      warn "They are in the backup and the Trash. To push them first: make snapshot-prefs"
+    fi
+  fi
   log "Trashing ~/.mimac state directory..."
   if to_trash "$HOME/.mimac"; then
     log "Trashed ~/.mimac"
