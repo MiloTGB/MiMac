@@ -155,18 +155,78 @@ if (( PRUNE && ! CHECK )) && (( ${#installed_formulae_all[@]} == 0 && ${#install
   exit 1
 fi
 
+# ─── Load the ignore list ────────────────────────────────────────────────────
+#
+# ~/.mimac/sync-ignore: one formula or cask name per line, no brew or cask
+# prefix; a # starts a comment. sync never offers these as new packages, and
+# --check, which the dashboard and doctor read, does not report them. The
+# picker's i key adds to it, as does the offer after a gum selection; it can
+# be edited by hand too. Ported from mrk's ~/.mrk/sync-ignore.
+
+SYNC_IGNORE_FILE="$STATE_DIR/sync-ignore"
+_SYNC_IGNORE=()
+if [[ -f "$SYNC_IGNORE_FILE" ]]; then
+  while IFS= read -r _line || [[ -n "$_line" ]]; do
+    _line="${_line%%#*}"            # strip comments
+    _line="${_line//[[:space:]]/}"  # strip whitespace
+    [[ -n "$_line" ]] && _SYNC_IGNORE+=("$_line")
+  done < "$SYNC_IGNORE_FILE"
+  if (( ${#_SYNC_IGNORE[@]} > 0 )); then
+    log "Loaded ${#_SYNC_IGNORE[@]} ignore rule(s) from ~/.mimac/sync-ignore"
+  fi
+fi
+
+_sync_ignored() {
+  local _item
+  for _item in ${_SYNC_IGNORE[@]+"${_SYNC_IGNORE[@]}"}; do
+    [[ "$_item" == "$1" ]] && return 0
+  done
+  return 1
+}
+
+# Append one name to the ignore file, creating it with a header when absent.
+# Append-only: existing lines are never rewritten or reordered.
+_append_sync_ignore() {
+  if [[ ! -f "$SYNC_IGNORE_FILE" ]]; then
+    mkdir -p "$STATE_DIR"
+    cat > "$SYNC_IGNORE_FILE" <<'IGNOREHEADER'
+# MiMac sync ignore list
+#
+# One formula name or cask name per line, with no brew or cask prefix.
+# A # character starts a comment.
+#
+# sync never offers these as new packages.
+IGNOREHEADER
+  fi
+  # A last line with no newline would otherwise absorb the append.
+  if [[ -s "$SYNC_IGNORE_FILE" && -n "$(tail -c 1 "$SYNC_IGNORE_FILE")" ]]; then
+    printf '\n' >> "$SYNC_IGNORE_FILE"
+  fi
+  printf '%s\n' "$1" >> "$SYNC_IGNORE_FILE"
+  _SYNC_IGNORE+=("$1")
+}
+
 # ─── 3. Compute diff ─────────────────────────────────────────────────────────
 
 new_formulae_arr=()
 new_casks_arr=()
+_filtered=0
 
 for pkg in "${!installed_formulae[@]}"; do
-  [[ -z "${brewfile_formulae[$pkg]+x}" ]] && new_formulae_arr+=("$pkg")
+  [[ -z "${brewfile_formulae[$pkg]+x}" ]] || continue
+  if _sync_ignored "$pkg"; then _filtered=$((_filtered + 1)); continue; fi
+  new_formulae_arr+=("$pkg")
 done
 
 for pkg in "${!installed_casks[@]}"; do
-  [[ -z "${brewfile_casks[$pkg]+x}" ]] && new_casks_arr+=("$pkg")
+  [[ -z "${brewfile_casks[$pkg]+x}" ]] || continue
+  if _sync_ignored "$pkg"; then _filtered=$((_filtered + 1)); continue; fi
+  new_casks_arr+=("$pkg")
 done
+
+if (( _filtered > 0 )); then
+  log "Skipping $_filtered ignored package(s) (see ~/.mimac/sync-ignore)"
+fi
 
 # Sort
 if (( ${#new_formulae_arr[@]} > 0 )); then
@@ -406,6 +466,8 @@ find_picker() {
 
 declare -A selected_formulae=()
 declare -A selected_casks=()
+declare -A tui_ignored=()
+USED_PICKER=0
 
 picker_bin=$(find_picker)
 
@@ -427,16 +489,20 @@ if [[ -n "$picker_bin" ]]; then
     done
   fi
 
+  # q in the picker drops the additions and keeps the i marks, status 0;
+  # ctrl+c drops both, status 1.
   picker_out=$("$picker_bin" \
     --brewfile "$TEMP_BREWFILE" \
     --installed-formulae "" \
     --installed-casks "") || true
+  USED_PICKER=1
 
   while IFS=: read -r pkg_type pkg_name; do
     [[ -z "$pkg_name" ]] && continue
     case "$pkg_type" in
       formula) selected_formulae["$pkg_name"]=1 ;;
       cask)    selected_casks["$pkg_name"]=1 ;;
+      ignore-formula|ignore-cask) tui_ignored["$pkg_name"]=1 ;;
     esac
   done <<< "$picker_out"
 
@@ -482,6 +548,50 @@ if (( ${#selected_casks[@]} > 0 )); then
   for pkg in "${!selected_casks[@]}"; do
     (( selected_casks["$pkg"] == 1 )) && ((n_selected_casks++)) || true
   done
+fi
+
+# ─── 4b. Record the packages to ignore ───────────────────────────────────────
+#
+# Candidates not added come back every run. In the picker, i marks the ones to
+# stop offering; after a gum selection, sync asks. Only the ignore file is
+# written here, never the Brewfile, and before the "nothing selected" exit
+# below, since declining every candidate is exactly the case this is for.
+
+declined_pkgs=()
+for pkg in ${new_formulae_arr[@]+"${new_formulae_arr[@]}"}; do
+  [[ -n "${selected_formulae[$pkg]+x}" ]] || declined_pkgs+=("$pkg")
+done
+for pkg in ${new_casks_arr[@]+"${new_casks_arr[@]}"}; do
+  [[ -n "${selected_casks[$pkg]+x}" ]] || declined_pkgs+=("$pkg")
+done
+
+declare -A ignore_selected=()
+if (( USED_PICKER )); then
+  # The picker already asked: no i marks means "ask me again next run".
+  for pkg in "${!tui_ignored[@]}"; do ignore_selected["$pkg"]=1; done
+elif (( ${#declined_pkgs[@]} > 0 )); then
+  echo "" > /dev/tty
+  gum_out=$(gum choose --no-limit \
+    --cursor.foreground=214 \
+    --selected.foreground=214 \
+    --header="Select declined packages to add to the ignore list, so they stop reappearing:" \
+    "${declined_pkgs[@]}" < /dev/tty 2>/dev/tty) || true
+  while IFS= read -r pkg; do
+    [[ -n "$pkg" ]] && ignore_selected["$pkg"]=1
+  done <<< "$gum_out"
+fi
+
+if (( ${#ignore_selected[@]} > 0 )); then
+  while IFS= read -r pkg; do
+    if _sync_ignored "$pkg"; then
+      log "$pkg is already in ~/.mimac/sync-ignore"
+    elif (( DRY_RUN )); then
+      dry "Would add $pkg to ~/.mimac/sync-ignore"
+    else
+      _append_sync_ignore "$pkg"
+      log "Added $pkg to ~/.mimac/sync-ignore"
+    fi
+  done < <(printf '%s\n' "${!ignore_selected[@]}" | sort)
 fi
 
 if (( n_selected_formulae == 0 && n_selected_casks == 0 )); then

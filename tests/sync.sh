@@ -58,13 +58,16 @@ grep -qx "\$what" "$W/brew-fails" 2>/dev/null && { echo "Error: stub failure" >&
 cat "$W/installed-\$what" 2>/dev/null
 exit 0
 EOF
-# The stub gum: choose prints every choice it was offered, as picking all.
-cat > "$S/gum" <<'EOF'
+# The stub gum: choose prints every choice it was offered, as picking all —
+# except, when $W/gum-declines exists, at the prompt to add to the Brewfile,
+# where it picks none.
+cat > "$S/gum" <<EOF
 #!/bin/sh
-[ "$1" = choose ] || exit 9
+[ "\$1" = choose ] || exit 9
 shift
-for a in "$@"; do
-  case "$a" in --*) ;; *) printf '%s\n' "$a" ;; esac
+case "\$*" in *"to add to Brewfile"*) [ -f "$W/gum-declines" ] && exit 0 ;; esac
+for a in "\$@"; do
+  case "\$a" in --*) ;; *) printf '%s\n' "\$a" ;; esac
 done
 EOF
 chmod +x "$S/brew" "$S/gum"
@@ -179,6 +182,80 @@ if (( RC == 1 )) && grep -q 'refusing to prune' "$W/err" && unchanged; then
   pass "--prune with nothing installed: refused, and the Brewfile unchanged"
 else
   fail "--prune with nothing installed: exit $RC"; show
+fi
+
+# ── 6. The ignore list: never offered, never reported ────────────────────────
+
+IGN="$W/home/.mimac/sync-ignore"
+installed "jq ripgrep" "jq ripgrep wget" "firefox gone-app zoom"
+mkdir -p "$W/home/.mimac"
+printf '# kept by hand\nripgrep   # a comment after the name\n' > "$IGN"
+sync --check
+if (( RC == 0 )) && [[ "$(cat "$W/out")" == $'add\tcask\tzoom' ]] && grep -q 'Skipping 1 ignored package' "$W/err"; then
+  pass "an ignored package is left out of --check, which the dashboard and doctor read"
+else
+  fail "--check with an ignore list: exit $RC"; show
+fi
+rm -f "$IGN"
+
+# ── 7. The picker's i marks are written to the list ─────────────────────────
+
+# A stub picker on PATH, as one that was quit with q after two i marks prints.
+cat > "$S/mimac-picker" <<'EOF'
+#!/bin/sh
+printf 'ignore-formula:ripgrep\nignore-cask:zoom\n'
+EOF
+chmod +x "$S/mimac-picker"
+
+sync -n
+if (( RC == 0 )) && grep -q 'Would add ripgrep to ~/.mimac/sync-ignore' "$W/err" \
+   && grep -q 'Would add zoom to ~/.mimac/sync-ignore' "$W/err" && [[ ! -e "$IGN" ]] && unchanged; then
+  pass "a dry run names the marks it would record, and writes no list"
+else
+  fail "picker marks, dry run: exit $RC"; show
+fi
+
+sync
+if (( RC == 0 )) && grep -qx 'ripgrep' "$IGN" && grep -qx 'zoom' "$IGN" && grep -q '^# MiMac sync ignore list' "$IGN" \
+   && grep -q 'No packages selected' "$W/err" && unchanged; then
+  pass "the picker's marks go into a new ~/.mimac/sync-ignore, with its header; the Brewfile is untouched"
+else
+  fail "picker marks: exit $RC, list:"; sed 's/^/    /' "$IGN" 2>/dev/null; show
+fi
+
+sync --check
+if (( RC == 0 )) && [[ ! -s "$W/out" ]]; then
+  pass "after that, --check reports nothing to add"
+else
+  fail "--check after the marks: exit $RC"; show
+fi
+rm -f "$S/mimac-picker" "$IGN"
+
+# ── 8. Without the picker, sync asks after a gum selection ──────────────────
+
+# A list whose last line has no newline: the append must not run into it.
+printf 'nvm' > "$IGN"
+: > "$W/gum-declines"
+installed "jq ripgrep" "jq ripgrep wget" "firefox gone-app zoom"
+sync_tty
+rm -f "$W/gum-declines"
+if (( RC == 0 )) && grep -q 'Added ripgrep to ~/.mimac/sync-ignore' "$W/out" \
+   && grep -q 'Added zoom to ~/.mimac/sync-ignore' "$W/out" && grep -q 'No packages selected' "$W/out" \
+   && [[ "$(cat "$IGN")" == $'nvm\nripgrep\nzoom' ]] && unchanged; then
+  pass "gum: the declined packages are offered, and the chosen ones appended after the last line"
+else
+  fail "gum route: exit $RC, list:"; sed 's/^/    /' "$IGN"; show
+fi
+rm -f "$IGN"
+
+# ── 9. The picker's other caller keeps no list ──────────────────────────────
+
+# brew-packages shows the same picker for Phase 2, and has nowhere to put an
+# i mark: it hides the key, which also keeps q a cancel there.
+if grep -q '^  local picker_args=(.*"--no-ignore"' "$REPO_ROOT/scripts/brew-packages"; then
+  pass "brew-packages runs the picker with --no-ignore"
+else
+  fail "brew-packages does not pass --no-ignore to the picker"
 fi
 
 if (( fails )); then

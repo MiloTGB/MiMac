@@ -240,7 +240,10 @@ find_picker() {
 # Expects those maps to already be declared by the caller.
 _run_mimac_picker() {
   local picker_bin="$1"
-  local picker_args=("--brewfile" "$BREWFILE")
+  # --no-ignore: Phase 2 keeps no ignore list, so the picker's i key, which
+  # marks a package for sync's, would have nowhere to go. It also keeps q a
+  # cancel, status 1, as the check below expects.
+  local picker_args=("--brewfile" "$BREWFILE" "--no-ignore")
   (( NO_FORMULAE )) && picker_args+=("--skip-formulae")
   (( NO_CASKS ))    && picker_args+=("--skip-casks")
 

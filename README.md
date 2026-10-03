@@ -14,7 +14,7 @@ Everything is idempotent — run any command as often as you like.
 | `make doctor` | When something feels off | Find what is broken or drifting — see below. `ARGS=--fix` repairs the safe items |
 | `make update` | Any time | Upgrade every package (topgrade: Homebrew, casks, oh-my-zsh, pipx, gh extensions), then say which steps failed and that the rest ran |
 | `make updates` | Any time | Install macOS updates for this version. **Never a major upgrade** — `ARGS=-n` to preview |
-| `make sync` | After installing or removing apps | Pick which new Homebrew packages go into the Brewfile |
+| `make sync` | After installing or removing apps | Pick which new Homebrew packages go into the Brewfile; `i` in the picker stops offering one (`~/.mimac/sync-ignore`) |
 | `status` | Daily | The dashboard: what is unrecorded, what has fallen behind, Time Machine, then the installation. `f` runs a fix (`make status` prints it as text) |
 
 All of these, and every other target, also work from `~` — `~/Makefile` forwards them to the repo.

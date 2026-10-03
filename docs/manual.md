@@ -187,11 +187,20 @@ nothing: it is what `status` and `make doctor` read, so the three always agree.
 
 1. Reads the Brewfile to build a list of already-tracked packages
 2. Runs `brew leaves` (top-level formulae) and `brew list --cask` to see what's installed
-3. Computes the diff — packages installed but not yet in the Brewfile
-4. Opens **mimac-picker** TUI: use `Space` to select packages, `Enter` to confirm, `q` to quit
+3. Computes the diff — packages installed but not yet in the Brewfile, less the ones in
+   `~/.mimac/sync-ignore`
+4. Opens **mimac-picker** TUI: `Space` adds a package, `i` marks it to ignore, `Enter`
+   confirms. `q` quits without adding anything but keeps the `i` marks; `Ctrl-C` drops both
 5. For each selected formula, prompts via `gum` to choose which Brewfile section to add it to
 6. Casks are auto-assigned to the existing cask section
 7. Inserts each entry alphabetically within its section
+
+**Packages you keep but never want in the Brewfile** — a tool another tool installed, a cask you
+are only trying — go in `~/.mimac/sync-ignore`, one name per line, `#` for comments. `sync`
+stops offering them, and `status` and `make doctor` stop reporting them. Marking a package with
+`i` in the picker adds it to the list; without the picker, `sync` asks after the `gum`
+selection which of the declined packages to add. The file can be edited by hand, and a dry
+run (`ARGS=-n`) only says what it would add. Ported from mrk.
 
 > **Note:** The mimac-picker binary lives at `bin/mimac-picker` (gitignored, platform-specific).
 > If it's missing, rebuild it with `make build-tools`.
@@ -494,8 +503,8 @@ selected panel's first one, after asking. Ported from mrk's `mrk-status`.
 
 **Unrecorded** — what the next Mac would not get:
 
-- Homebrew packages installed but not in the Brewfile (`make sync ARGS=-c`), and Brewfile
-  entries not installed — `make sync-clean` if you removed them, `make brew` if they are not
+- Homebrew packages installed but not in the Brewfile (`make sync ARGS=-c`), except those in
+  `~/.mimac/sync-ignore`, and Brewfile entries not installed — `make sync-clean` if you removed them, `make brew` if they are not
   installed yet. Both come from `sync --check`, so the panel and `sync` agree.
 - `~/MiMac`: uncommitted changes, commits not pushed (`git push`), a branch with no upstream
 - How old the app-preferences snapshot in `~/.mimac/preferences` is (information only)
@@ -534,6 +543,7 @@ MiMac writes runtime state to `~/.mimac/` and `~/.cache/mimac/`:
 |---|---|
 | `~/.mimac/preferences/` | Local snapshot of app plists + App Support files |
 | `~/.mimac/backups/` | Timestamped backups of whatever setup replaced with a dotfile link: a file, a directory, or a link pointing elsewhere |
+| `~/.mimac/sync-ignore` | Homebrew packages `make sync` never offers, and `status` and `doctor` never report |
 | `~/.mimac/defaults-rollback.sh` | Undo every `defaults write` MiMac made |
 | `~/.mimac/hardening-rollback.sh` | Undo security hardening |
 | `~/.mimac/services-rollback.sh` | Re-enable services turned off by `trim-services` |

@@ -755,16 +755,26 @@ always agree.</p>
 <li>Reads the Brewfile to build a list of already-tracked packages</li>
 <li>Runs <code>brew leaves</code> (top-level formulae) and
 <code>brew list --cask</code> to see what’s installed</li>
-<li>Computes the diff — packages installed but not yet in the
-Brewfile</li>
-<li>Opens <strong>mimac-picker</strong> TUI: use <code>Space</code> to
-select packages, <code>Enter</code> to confirm, <code>q</code> to
-quit</li>
+<li>Computes the diff — packages installed but not yet in the Brewfile,
+less the ones in <code>~/.mimac/sync-ignore</code></li>
+<li>Opens <strong>mimac-picker</strong> TUI: <code>Space</code> adds a
+package, <code>i</code> marks it to ignore, <code>Enter</code> confirms.
+<code>q</code> quits without adding anything but keeps the
+<code>i</code> marks; <code>Ctrl-C</code> drops both</li>
 <li>For each selected formula, prompts via <code>gum</code> to choose
 which Brewfile section to add it to</li>
 <li>Casks are auto-assigned to the existing cask section</li>
 <li>Inserts each entry alphabetically within its section</li>
 </ol>
+<p><strong>Packages you keep but never want in the Brewfile</strong> — a
+tool another tool installed, a cask you are only trying — go in
+<code>~/.mimac/sync-ignore</code>, one name per line, <code>#</code> for
+comments. <code>sync</code> stops offering them, and <code>status</code>
+and <code>make doctor</code> stop reporting them. Marking a package with
+<code>i</code> in the picker adds it to the list; without the picker,
+<code>sync</code> asks after the <code>gum</code> selection which of the
+declined packages to add. The file can be edited by hand, and a dry run
+(<code>ARGS=-n</code>) only says what it would add. Ported from mrk.</p>
 <blockquote>
 <p><strong>Note:</strong> The mimac-picker binary lives at
 <code>bin/mimac-picker</code> (gitignored, platform-specific). If it’s
@@ -1331,7 +1341,8 @@ after asking. Ported from mrk’s <code>mrk-status</code>.</p>
 <p><strong>Unrecorded</strong> — what the next Mac would not get:</p>
 <ul>
 <li>Homebrew packages installed but not in the Brewfile
-(<code>make sync ARGS=-c</code>), and Brewfile entries not installed —
+(<code>make sync ARGS=-c</code>), except those in
+<code>~/.mimac/sync-ignore</code>, and Brewfile entries not installed —
 <code>make sync-clean</code> if you removed them, <code>make brew</code>
 if they are not installed yet. Both come from <code>sync --check</code>,
 so the panel and <code>sync</code> agree.</li>
@@ -1395,6 +1406,11 @@ problem shows its detail.</p>
 <td><code>~/.mimac/backups/</code></td>
 <td>Timestamped backups of whatever setup replaced with a dotfile link:
 a file, a directory, or a link pointing elsewhere</td>
+</tr>
+<tr>
+<td><code>~/.mimac/sync-ignore</code></td>
+<td>Homebrew packages <code>make sync</code> never offers, and
+<code>status</code> and <code>doctor</code> never report</td>
 </tr>
 <tr>
 <td><code>~/.mimac/defaults-rollback.sh</code></td>

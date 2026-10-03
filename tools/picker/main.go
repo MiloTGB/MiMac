@@ -1,6 +1,7 @@
 // mimac-picker — interactive Brewfile package selector
 // Two-pane Bubble Tea TUI: categories (left) | packages with descriptions (right)
-// Outputs selected packages as "formula:name" or "cask:name" lines to stdout.
+// Outputs selected packages as "formula:name" or "cask:name" lines to stdout,
+// and packages marked to ignore as "ignore-formula:name" or "ignore-cask:name".
 package main
 
 import (
@@ -32,6 +33,10 @@ type pkg struct {
 	desc      string
 	installed bool
 	selected  bool
+	// Marked for ~/.mimac/sync-ignore rather than the Brewfile. Mutually
+	// exclusive with selected: "add this" and "never offer this again" are
+	// opposite answers to the same question.
+	ignored bool
 }
 
 type category struct {
@@ -237,6 +242,16 @@ type model struct {
 	height    int
 	confirmed bool
 	cancelled bool
+	// ctrl+c only. An `i` mark is a decision already made, so quitting with q
+	// or esc keeps the marks while dropping the pending additions; a hard
+	// interrupt drops everything. Marking packages and then quitting is the
+	// natural move when adding nothing, and mrk's picker once threw the marks
+	// away on it, so the same packages came back the next run.
+	aborted bool
+	// noIgnore hides the ignore key, for brew-packages: Phase 2 installs from
+	// the Brewfile and keeps no ignore list, so a mark there would have nowhere
+	// to go. sync, which keeps ~/.mimac/sync-ignore, leaves it false.
+	noIgnore bool
 }
 
 func newModel(cats []category) model {
@@ -264,6 +279,18 @@ func (m model) totalSelected() int {
 	return n
 }
 
+func (m model) totalIgnored() int {
+	n := 0
+	for _, c := range m.cats {
+		for _, p := range c.pkgs {
+			if p.ignored {
+				n++
+			}
+		}
+	}
+	return n
+}
+
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -272,7 +299,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "q", "ctrl+c":
+		case "ctrl+c":
+			m.aborted = true
+			m.cancelled = true
+			return m, tea.Quit
+		case "q":
 			m.cancelled = true
 			return m, tea.Quit
 		case "esc":
@@ -324,6 +355,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					p := pkgs[m.pkgIdx]
 					if !p.installed {
 						p.selected = !p.selected
+						if p.selected {
+							p.ignored = false
+						}
+						if m.pkgIdx < len(pkgs)-1 {
+							m.pkgIdx++
+						}
+					}
+				}
+			}
+
+		case "i":
+			if !m.leftFocus && !m.noIgnore {
+				pkgs := m.currentPkgs()
+				if m.pkgIdx < len(pkgs) {
+					p := pkgs[m.pkgIdx]
+					if !p.installed {
+						p.ignored = !p.ignored
+						if p.ignored {
+							p.selected = false
+						}
 						if m.pkgIdx < len(pkgs)-1 {
 							m.pkgIdx++
 						}
@@ -345,6 +396,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				for _, p := range pkgs {
 					if !p.installed {
 						p.selected = !allOn
+						if p.selected {
+							p.ignored = false
+						}
 					}
 				}
 			}
@@ -362,6 +416,7 @@ var (
 	styleBadgeDim  = lipgloss.NewStyle().Foreground(theme.ColSubtle)
 	styleInstalled = lipgloss.NewStyle().Foreground(theme.ColDim)
 	stylePkgSel    = lipgloss.NewStyle().Foreground(theme.ColGreen)
+	stylePkgIgn    = lipgloss.NewStyle().Foreground(theme.ColAmber)
 	stylePkgCurs   = lipgloss.NewStyle().Bold(true).Foreground(theme.ColHighlight)
 	styleDescDim   = lipgloss.NewStyle().Foreground(theme.ColSubtle)
 )
@@ -394,7 +449,11 @@ func (m model) View() string {
 
 func (m model) viewHeader() string {
 	title := theme.StyleTitle.Render("MiMac brew")
-	sel := styleCount.Render(fmt.Sprintf("%d selected", m.totalSelected()))
+	selText := fmt.Sprintf("%d selected", m.totalSelected())
+	if ign := m.totalIgnored(); ign > 0 {
+		selText += fmt.Sprintf(" · %d ignored", ign)
+	}
+	sel := styleCount.Render(selText)
 	gap := m.width - lipgloss.Width(title) - lipgloss.Width(sel)
 	if gap < 1 {
 		gap = 1
@@ -402,8 +461,17 @@ func (m model) viewHeader() string {
 	return title + strings.Repeat(" ", gap) + sel
 }
 
+// viewFooter truncates to the terminal width: a footer that wraps costs a body
+// line, and lipgloss pads every line of the frame to the widest one.
 func (m model) viewFooter() string {
-	return theme.StyleFooter.Render("↑↓/jk move · tab/hl switch pane · space toggle · a all · enter confirm · q quit")
+	help := "↑↓/jk move · tab/hl pane · space add · i ignore · a all · enter ok · q quit (ignores kept)"
+	if m.noIgnore {
+		help = "↑↓/jk move · tab/hl pane · space toggle · a all · enter confirm · q quit"
+	}
+	if m.width > 0 {
+		help = theme.Truncate(help, m.width)
+	}
+	return theme.StyleFooter.Render(help)
 }
 
 func (m model) viewLeft(inner, height int) string {
@@ -513,6 +581,8 @@ func (m model) viewRight(inner, height int) string {
 			indicator = styleInstalled.Render("● ")
 		} else if p.selected {
 			indicator = stylePkgSel.Render("✓ ")
+		} else if p.ignored {
+			indicator = stylePkgIgn.Render("✗ ")
 		}
 
 		isCursor := i == m.pkgIdx && !m.leftFocus
@@ -537,6 +607,10 @@ func (m model) viewRight(inner, height int) string {
 			line = indicator +
 				styleInstalled.Render(name) + strings.Repeat(" ", pad+2) +
 				styleInstalled.Render(desc)
+		case isCursor && p.ignored:
+			line = stylePkgCurs.Render("▸ ") +
+				stylePkgCurs.Render(name) + strings.Repeat(" ", pad+2) +
+				stylePkgIgn.Render(desc)
 		case isCursor && p.selected:
 			line = stylePkgCurs.Render("▸ ") +
 				stylePkgCurs.Render(name) + strings.Repeat(" ", pad+2) +
@@ -549,6 +623,10 @@ func (m model) viewRight(inner, height int) string {
 			line = indicator +
 				stylePkgSel.Render(name) + strings.Repeat(" ", pad+2) +
 				stylePkgSel.Render(desc)
+		case p.ignored:
+			line = indicator +
+				stylePkgIgn.Render(name) + strings.Repeat(" ", pad+2) +
+				stylePkgIgn.Render(desc)
 		default:
 			line = indicator +
 				styleCatNorm.Render(name) + strings.Repeat(" ", pad+2) +
@@ -565,12 +643,45 @@ func (m model) viewRight(inner, height int) string {
 
 // ── Main ──────────────────────────────────────────────────────────────────
 
+// emitLines renders the picker's decisions as "type:name" lines. Ignored
+// packages take an "ignore-" prefixed type rather than a third field, so the
+// caller's `IFS=: read -r a b` split keeps working unchanged.
+//
+// cancelled means the user left with q or esc: the pending additions are
+// dropped, and the ignore marks kept. A ctrl+c abort exits before this.
+func emitLines(cats []category, cancelled bool) []string {
+	var out []string
+	for _, cat := range cats {
+		for _, p := range cat.pkgs {
+			switch {
+			case p.selected && !cancelled:
+				out = append(out, fmt.Sprintf("%s:%s", p.kind, p.name))
+			case p.ignored:
+				out = append(out, fmt.Sprintf("ignore-%s:%s", p.kind, p.name))
+			}
+		}
+	}
+	return out
+}
+
+// exitStatus is the picker's status as its callers read it. With the ignore key
+// hidden (brew-packages), q and esc are a cancel, status 1, as they always
+// were: there is no mark to keep. With it shown (sync), they keep the marks,
+// status 0. ctrl+c is status 1 either way.
+func exitStatus(m model) int {
+	if m.aborted || (m.cancelled && m.noIgnore) {
+		return 1
+	}
+	return 0
+}
+
 func main() {
 	brewfilePath := flag.String("brewfile", "Brewfile", "Path to Brewfile")
 	installedFormulaeStr := flag.String("installed-formulae", "", "Comma-separated installed formulae")
 	installedCasksStr := flag.String("installed-casks", "", "Comma-separated installed casks")
 	skipFormulae := flag.Bool("skip-formulae", false, "Exclude formulae from picker")
 	skipCasks := flag.Bool("skip-casks", false, "Exclude casks from picker")
+	noIgnore := flag.Bool("no-ignore", false, "Hide the ignore key (brew-packages, which keeps no ignore list)")
 	flag.Parse()
 
 	installedFormulae := map[string]bool{}
@@ -605,7 +716,9 @@ func main() {
 	}
 	defer tty.Close()
 
-	p := tea.NewProgram(newModel(cats), tea.WithAltScreen(), tea.WithInput(tty), tea.WithOutput(tty))
+	m := newModel(cats)
+	m.noIgnore = *noIgnore
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithInput(tty), tea.WithOutput(tty))
 	final, err := p.Run()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "mimac-picker: %v\n", err)
@@ -613,16 +726,10 @@ func main() {
 	}
 
 	result := final.(model)
-	if result.cancelled {
-		os.Exit(1)
+	if rc := exitStatus(result); rc != 0 {
+		os.Exit(rc)
 	}
-
-	// Output selected packages as "type:name" lines
-	for _, cat := range result.cats {
-		for _, p := range cat.pkgs {
-			if p.selected {
-				fmt.Printf("%s:%s\n", p.kind, p.name)
-			}
-		}
+	for _, line := range emitLines(result.cats, result.cancelled) {
+		fmt.Println(line)
 	}
 }
