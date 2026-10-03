@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    # The macOS this Mac runs, on Apple silicon: macOS 15 on 2026-10-03.
+    # macos-latest moves when GitHub promotes a new release, and make updates
+    # never installs a major upgrade, so bump this in the same change as the
+    # upgrade done by hand.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+          # The Go modules live in tools/*, not at the repo root. setup-go
+          # looks for ./go.sum by default, and its cache restore fails without
+          # this (mrk found it the hard way).
+          cache-dependency-path: tools/*/go.sum
+
+      # shellcheck for make check. bash: the runner has only macOS's bash
+      # 3.2, and sync, which tests/sync.sh runs, re-execs into Homebrew's 4+.
+      - name: Install shellcheck and bash
+        run: brew install shellcheck bash
+
+      # shellcheck, gofmt, go vet, go test, and every test in tests/. Each test
+      # runs under a throwaway HOME with stubs, so the runner's own settings,
+      # Homebrew and network are never what it reads.
+      - name: make check
+        run: make check
+
+      # Builds both TUIs. The runner's checkout is not ~/MiMac, so nothing is
+      # linked into ~/bin: "built, not linked" is the expected line.
+      - name: make build-tools
+        run: make build-tools

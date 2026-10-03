@@ -156,6 +156,8 @@ make tidy     # go mod tidy in every tool — builds no longer do this themselve
 
 Each test in `tests/` runs under a throwaway `HOME`, with stubs for anything that would reach
 the network, this Mac's settings or the real `~/bin`, so none needs sudo or changes anything.
+GitHub Actions runs `make check` and `make build-tools` on every push to `main` and every pull
+request (`.github/workflows/ci.yml`), on the macOS version this Mac runs.
 They hold the behaviour of `make update`'s verdict, `check-updates`, `make pull`, `~/Makefile`
 and setup's dotfile backups.
 

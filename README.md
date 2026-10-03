@@ -52,7 +52,7 @@ permissions, old-hostname completion caches, `~/bin` links, stale TUI binaries).
 | `make trim-services` | Disable background launchd agents this Mac does not need (`ARGS=-n` to preview) |
 | `make harden` | Security hardening (Touch ID sudo via `sudo_local`, screen lock, firewall) |
 | `make build-tools` | Build the Go TUIs: `mimac-picker`, `mimac-status` |
-| `make check` | Lint the repo (shellcheck, gofmt, `go vet`), then `go test` and the tests in `tests/` |
+| `make check` | Lint the repo (shellcheck, gofmt, `go vet`), then `go test` and the tests in `tests/`. CI runs it on every push |
 | `make test` | Run the tests in `tests/` (each under a throwaway `HOME`, with stubs) |
 | `make tidy` | `go mod tidy` in every tool (builds no longer do this) |
 | `make tools` / `make dotfiles` | Relink `~/bin` / dotfiles only |
@@ -106,6 +106,7 @@ MiMac/
 │   └── topgrade.toml
 ├── tools/              # Go/Bubble Tea TUIs: picker, mimac-status (+ shared theme)
 ├── tests/              # Shell tests run by make check: update verdict, check-updates, pull, …
+├── .github/workflows/  # CI: make check and make build-tools on macOS, on every push
 ├── docs/
 │   ├── manual.md       # Workflow manual source
 │   └── assets/         # CSS for generated HTML

@@ -723,7 +723,10 @@ Repo (<code>make check</code>)</h2>
 <p>Each test in <code>tests/</code> runs under a throwaway
 <code>HOME</code>, with stubs for anything that would reach the network,
 this Mac’s settings or the real <code>~/bin</code>, so none needs sudo
-or changes anything. They hold the behaviour of
+or changes anything. GitHub Actions runs <code>make check</code> and
+<code>make build-tools</code> on every push to <code>main</code> and
+every pull request (<code>.github/workflows/ci.yml</code>), on the macOS
+version this Mac runs. They hold the behaviour of
 <code>make update</code>’s verdict, <code>check-updates</code>,
 <code>make pull</code>, <code>~/Makefile</code> and setup’s dotfile
 backups.</p>
