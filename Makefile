@@ -20,7 +20,10 @@ define go-build
 		exit 1; \
 	fi
 	@printf '  \033[36m▸\033[0m Building $(1)…\n'
-	@cd "$(REPO_ROOT)/tools/$(2)" && go build -o "$(BIN_DIR)/$(1)" .
+	@VERSION=$$(git -C "$(REPO_ROOT)" describe --tags --always --dirty 2>/dev/null || echo dev); \
+	 SHA=$$(git -C "$(REPO_ROOT)" rev-parse --short HEAD 2>/dev/null || echo unknown); \
+	 cd "$(REPO_ROOT)/tools/$(2)" && \
+	 go build -ldflags "-X main.Version=$$VERSION -X main.GitSHA=$$SHA" -o "$(BIN_DIR)/$(1)" .
 	@chmod +x "$(BIN_DIR)/$(1)"
 endef
 
@@ -63,7 +66,7 @@ fix-exec: ## Make scripts and bin files executable
 install: setup ## Run Phase 1 setup
 
 setup: fix-exec ## Phase 1: shell, dotfiles, macOS defaults (use ARGS=--dry-run to preview)
-	@"$(SCRIPTS)/setup"
+	@"$(SCRIPTS)/setup" $(ARGS)
 
 setup-dry: fix-exec ## Preview setup changes without applying
 	@"$(SCRIPTS)/setup" --dry-run
@@ -158,7 +161,7 @@ harden: ## Apply macOS security hardening
 trim-services: ## Disable background launchd agents this Mac does not need (ARGS=-n to preview)
 	@"$(SCRIPTS)/trim-services" $(ARGS)
 
-status: ## Show installation status
+status: ## Print the dashboard's panels as text: unrecorded work, upkeep, Time Machine, the installation
 	@"$(SCRIPTS)/status"
 
 doctor: ## Find what is broken or drifting on this Mac (ARGS=--fix to repair the safe items)

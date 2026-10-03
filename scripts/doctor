@@ -106,12 +106,12 @@ esac
 
 section "Links"
 
-# Dotfiles — the same set setup links
+# Dotfiles — the same set setup links (mimac_is_dotfile)
 linked=0
 shopt -s dotglob nullglob
 for src in "$REPO_ROOT/dotfiles"/*; do
+  mimac_is_dotfile "$src" || continue
   name="$(basename "$src")"
-  case "$name" in *.example|README*|*.md) continue ;; esac
   dst="$HOME/$name"
   if [[ -L "$dst" && "$(readlink "$dst")" == "$src" ]]; then
     linked=$(( linked + 1 ))
@@ -359,21 +359,13 @@ esac
 
 section "MiMac tools"
 
-# Go TUIs: missing, or older than their source (go.mod/go.sum included — a
-# dependency bump changes the binary without touching a .go file, and tools
-# that import the shared theme go stale when it changes).
+# Go TUIs: missing, or older than their source, by tool_freshness in lib.sh —
+# the rule the status dashboard's Upkeep panel reads too.
 if command -v go >/dev/null 2>&1; then
   stale=()
-  for pair in mimac-picker:picker mimac-status:mimac-status; do
-    bin_name="${pair%%:*}"; src="$REPO_ROOT/tools/${pair#*:}"
-    bin="$REPO_ROOT/bin/$bin_name"
-    [[ -d "$src" ]] || continue
-    dirs=("$src")
-    grep -q 'mimac-theme' "$src/go.mod" 2>/dev/null && dirs+=("$REPO_ROOT/tools/theme")
-    if [[ ! -x "$bin" ]] || [[ -n "$(find "${dirs[@]}" \( -name '*.go' -o -name go.mod -o -name go.sum \) -newer "$bin" -print -quit 2>/dev/null)" ]]; then
-      stale+=("$bin_name")
-    fi
-  done
+  while IFS=$'\t' read -r bin_name state; do
+    [[ "$state" == ok ]] || stale+=("$bin_name")
+  done < <(tool_freshness "$REPO_ROOT" "$REPO_ROOT/bin")
   if (( ${#stale[@]} == 0 )); then
     ok "TUI binaries are current"
   elif (( FIX )) && make -C "$REPO_ROOT" --no-print-directory build-tools >/dev/null 2>&1; then
@@ -432,21 +424,12 @@ else
     printf '%s\n' "$brew_out" | sed 's/^/      /' | head -30 >&2
   fi
 
-  # Drift between the Brewfile and this Mac, both directions. Reported, not a
-  # problem: an app tried out and not yet kept is normal.
-  BREWFILE="$REPO_ROOT/Brewfile"
-  if [[ -f "$BREWFILE" ]]; then
-    want_f="$(grep -oE '^brew "[^"]+"' "$BREWFILE" | cut -d'"' -f2 | sort -u)"
-    want_c="$(grep -oE '^cask "[^"]+"' "$BREWFILE" | cut -d'"' -f2 | sort -u)"
-    have_leaves="$(brew leaves 2>/dev/null | sort -u)"
-    have_f="$(brew list --formula -1 2>/dev/null | sort -u)"
-    have_c="$(brew list --cask -1 2>/dev/null | sort -u)"
-
-    untracked="$( { comm -13 <(printf '%s\n' "$want_f") <(printf '%s\n' "$have_leaves");
-                    comm -13 <(printf '%s\n' "$want_c") <(printf '%s\n' "$have_c"); } | sed '/^$/d' | tr '\n' ' ')"
-    missing="$( { comm -23 <(printf '%s\n' "$want_f") <(printf '%s\n' "$have_f");
-                  comm -23 <(printf '%s\n' "$want_c") <(printf '%s\n' "$have_c"); } | sed '/^$/d' | tr '\n' ' ')"
-
+  # Drift between the Brewfile and this Mac, both directions, as sync itself
+  # reckons it (sync --check), so doctor, sync and the dashboard agree.
+  # Reported, not a problem: an app tried out and not yet kept is normal.
+  if drift="$("$SCRIPT_DIR/sync" --check 2>/dev/null)"; then
+    untracked="$(awk -F'\t' '$1 == "add"   { printf "%s ", $3 }' <<< "$drift")"
+    missing="$(awk -F'\t'   '$1 == "prune" { printf "%s ", $3 }' <<< "$drift")"
     if [[ -z "$untracked" && -z "$missing" ]]; then
       ok "Brewfile matches what is installed"
     fi
@@ -458,6 +441,9 @@ else
       info "In the Brewfile but not installed: ${missing% }"
       info "→ make brew to install, or make sync-clean to drop them"
     fi
+  else
+    problem "sync --check failed: could not compare the Brewfile with what is installed"
+    hint "scripts/sync --check  (its error says why)"
   fi
 fi
 

@@ -1,266 +1,45 @@
 #!/usr/bin/env bash
+# status — the dashboard's panels as plain text: what make status prints.
+#
+# This is mimac-status --plain, run from this checkout. It used to be a second
+# implementation of the installation checks in bash, beside the dashboard's in
+# Go, and the two had drifted: each read different paths for the same facts.
+# There is now one set of checks, in tools/mimac-status (as mrk did on
+# 2026-09-30).
+#
+# Not linked into ~/bin: ~/bin/status is the dashboard itself, which make
+# mimac-status links there, and setup skips this file for that reason
+# (mimac_skip_link).
 set -euo pipefail
 
-# MiMac status — unified installation status
+_self="${BASH_SOURCE[0]}"
+while [[ -L "$_self" ]]; do
+  _dir="$(cd "$(dirname "$_self")" && pwd)"
+  _self="$(readlink "$_self")"
+  [[ "$_self" != /* ]] && _self="$_dir/$_self"
+done
+REPO_ROOT="$(cd "$(dirname "$_self")/.." && pwd)"
 
-# Requires bash 4+ (associative arrays). Re-exec with Homebrew's bash if needed.
-if (( BASH_VERSINFO[0] < 4 )); then
-  for _brew_bash in /opt/homebrew/bin/bash /usr/local/bin/bash; do
-    if [[ -x "$_brew_bash" ]]; then
-      exec "$_brew_bash" "$0" "$@"
-    fi
-  done
-  echo "Error: bash 4+ is required but not found." >&2
+case "${1:-}" in
+  -h|--help)
+    cat <<'USAGE'
+status — print mimac-status's panels as plain text
+
+Usage:
+  status [--help | -h]
+
+Runs this checkout's bin/mimac-status --plain, reporting on this checkout
+unless MIMAC_ROOT names another: Unrecorded, Upkeep, Time Machine Backups and
+Installation, each line with its fix. The dashboard itself is `status` on the
+PATH, or `mimac-status`.
+USAGE
+    exit 0 ;;
+  ?*) printf 'status: unknown argument: %s\n' "$1" >&2; exit 2 ;;
+esac
+
+bin="$REPO_ROOT/bin/mimac-status"
+if [[ ! -x "$bin" ]]; then
+  printf 'status: %s is not built. Build it with: make -C %s build-tools\n' "$bin" "$REPO_ROOT" >&2
   exit 1
 fi
-
-SOURCE="${BASH_SOURCE[0]}"
-while [[ -L "$SOURCE" ]]; do
-  DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
-  SOURCE="$(readlink "$SOURCE")"
-  [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
-done
-SCRIPT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
-
-# shellcheck source=lib.sh
-source "$SCRIPT_DIR/lib.sh"
-
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-INSTALL_BIN="$HOME/bin"
-STATE_DIR="$HOME/.mimac"
-BREWFILE="$REPO_ROOT/Brewfile"
-
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  MiMac Installation Status"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-
-###############################################################################
-# Dotfiles                                                                    #
-###############################################################################
-
-echo "Dotfiles:"
-if [[ -d "$REPO_ROOT/dotfiles" ]]; then
-  linked=0
-  missing=0
-  shopt -s dotglob nullglob
-  for src in "$REPO_ROOT/dotfiles"/*; do
-    [[ -e "$src" ]] || continue
-    dst="$HOME/$(basename "$src")"
-    if [[ -L "$dst" ]] && [[ "$(readlink "$dst")" == "$src" ]]; then
-      ((linked++)) || true
-    else
-      ((missing++)) || true
-      if [[ -e "$dst" ]]; then
-        warn "  Not linked: $dst (file exists)"
-      else
-        info "  Not linked: $dst"
-      fi
-    fi
-  done
-  shopt -u dotglob nullglob
-  
-  if (( linked > 0 )); then
-    ok "  $linked dotfile(s) linked"
-  fi
-  if (( missing == 0 && linked > 0 )); then
-    ok "  All dotfiles linked"
-  fi
-else
-  warn "  dotfiles directory not found"
-fi
-echo ""
-
-###############################################################################
-# Tools                                                                       #
-###############################################################################
-
-echo "Tools:"
-if [[ -d "$INSTALL_BIN" ]]; then
-  linked=0
-  broken=0
-  while IFS= read -r -d '' link; do
-    target="$(readlink "$link" 2>/dev/null || true)"
-    if [[ -n "$target" ]] && [[ "$target" == "$REPO_ROOT"/* ]]; then
-      if [[ -e "$target" ]]; then
-        ((linked++)) || true
-      else
-        ((broken++)) || true
-        warn "  Broken link: $link -> $target"
-      fi
-    fi
-  done < <(find "$INSTALL_BIN" -maxdepth 1 -type l -print0 2>/dev/null || true)
-  
-  if (( linked > 0 )); then
-    ok "  $linked tool(s) linked"
-  fi
-  if (( broken > 0 )); then
-    err "  $broken broken symlink(s)"
-  fi
-  if (( linked == 0 && broken == 0 )); then
-    info "  No MiMac tools linked"
-  fi
-else
-  warn "  $INSTALL_BIN not found"
-fi
-echo ""
-
-###############################################################################
-# macOS Defaults                                                              #
-###############################################################################
-
-echo "macOS Defaults:"
-if [[ -f "$STATE_DIR/defaults-rollback.sh" ]] && [[ -s "$STATE_DIR/defaults-rollback.sh" ]]; then
-  rollback_lines=$(grep -c "defaults write\|defaults delete" "$STATE_DIR/defaults-rollback.sh" 2>/dev/null || echo "0")
-  if (( rollback_lines > 0 )); then
-    ok "  Defaults have been applied"
-    info "  Rollback script: $STATE_DIR/defaults-rollback.sh"
-    info "  ($rollback_lines change(s) can be rolled back)"
-  else
-    info "  No defaults applied"
-  fi
-else
-  info "  No defaults applied"
-fi
-echo ""
-
-###############################################################################
-# Backups                                                                     #
-###############################################################################
-
-echo "Backups:"
-if [[ -d "$STATE_DIR/backups" ]]; then
-  # Only directories with something in them: setup used to leave an empty one
-  # on every relink, and each was counted as a backup.
-  backups=$(find "$STATE_DIR/backups" -mindepth 1 -maxdepth 1 -type d ! -empty 2>/dev/null | sort -r)
-  backup_count=$(printf '%s' "$backups" | grep -c . || true)
-  if (( backup_count > 0 )); then
-    ok "  $backup_count backup(s) found"
-    info "  Location: $STATE_DIR/backups"
-    # Show most recent
-    latest=$(printf '%s\n' "$backups" | head -n1)
-    if [[ -n "$latest" ]]; then
-      info "  Latest: $(basename "$latest")"
-    fi
-  else
-    info "  No backups found"
-  fi
-else
-  info "  No backups directory"
-fi
-echo ""
-
-###############################################################################
-# Shell                                                                       #
-###############################################################################
-
-echo "Shell:"
-if command -v zsh >/dev/null 2>&1; then
-  current_shell="$(dscl . -read "/Users/$USER" UserShell 2>/dev/null | awk '{print $2}')" || current_shell="unknown"
-  zsh_path="$(command -v zsh)"
-  if [[ "$current_shell" == "$zsh_path" ]]; then
-    ok "  Login shell: $current_shell"
-  else
-    warn "  Login shell: $current_shell (expected: $zsh_path)"
-  fi
-else
-  warn "  zsh not found"
-fi
-echo ""
-
-###############################################################################
-# PATH                                                                        #
-###############################################################################
-
-echo "PATH:"
-case ":$PATH:" in
-  *":$INSTALL_BIN:"*)
-    ok "  $INSTALL_BIN is on PATH"
-    ;;
-  *)
-    warn "  $INSTALL_BIN is NOT on PATH"
-    info "  Run: ./scripts/doctor --fix"
-    ;;
-esac
-echo ""
-
-###############################################################################
-# Homebrew                                                                    #
-###############################################################################
-
-echo "Homebrew:"
-if command -v brew >/dev/null 2>&1; then
-  ok "  $(brew --version | head -n1)"
-else
-  err "  Not installed"
-fi
-echo ""
-
-###############################################################################
-# Brewfile packages                                                           #
-###############################################################################
-
-if [[ -f "$BREWFILE" ]]; then
-  echo "Brewfile:"
-  # Count items in single pass
-  formulae=0; casks=0; taps=0
-  while IFS= read -r line; do
-    case "$line" in
-      brew\ *) formulae=$((formulae + 1)) ;;
-      cask\ *) casks=$((casks + 1)) ;;
-      tap\ *)  taps=$((taps + 1)) ;;
-    esac
-  done < "$BREWFILE"
-  ok "  Found ($formulae formulae, $casks casks, $taps taps)"
-
-  if command -v brew >/dev/null 2>&1; then
-    echo ""
-    echo "Installed packages from Brewfile:"
-
-    # Pre-fetch installed package lists for O(1) lookup
-    declare -A _installed_formulae=()
-    declare -A _installed_casks=()
-    while IFS= read -r _pkg; do
-      [[ -n "$_pkg" ]] && _installed_formulae["$_pkg"]=1
-    done < <(brew list --formula 2>/dev/null)
-    while IFS= read -r _pkg; do
-      [[ -n "$_pkg" ]] && _installed_casks["$_pkg"]=1
-    done < <(brew list --cask 2>/dev/null)
-
-    installed=0; missing=0; total=0
-
-    while IFS= read -r line; do
-      [[ -z "$line" || "$line" =~ ^# ]] && continue
-
-      if [[ "$line" =~ ^brew\ \"([^\"]+)\" ]]; then
-        pkg="${BASH_REMATCH[1]}"
-        total=$((total + 1))
-        if [[ -n "${_installed_formulae[$pkg]+x}" ]]; then
-          echo "  ✓ $pkg"
-          installed=$((installed + 1))
-        else
-          echo "  ✗ $pkg (not installed)"
-          missing=$((missing + 1))
-        fi
-      elif [[ "$line" =~ ^cask\ \"([^\"]+)\" ]]; then
-        cask="${BASH_REMATCH[1]}"
-        total=$((total + 1))
-        if [[ -n "${_installed_casks[$cask]+x}" ]]; then
-          echo "  ✓ $cask (cask)"
-          installed=$((installed + 1))
-        else
-          echo "  ✗ $cask (cask, not installed)"
-          missing=$((missing + 1))
-        fi
-      fi
-    done < "$BREWFILE"
-
-    echo ""
-    echo "  Summary: $installed/$total installed, $missing missing"
-  fi
-  echo ""
-fi
-
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
+MIMAC_ROOT="${MIMAC_ROOT:-$REPO_ROOT}" exec "$bin" --plain

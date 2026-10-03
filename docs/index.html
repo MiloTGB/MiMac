@@ -430,8 +430,8 @@ Reference</a>
 <li><a href="#standalone-commands-bin" id="toc-standalone-commands-bin">Standalone Commands
 (<code>~/bin</code>)</a></li>
 </ul></li>
-<li><a href="#what-make-status-checks" id="toc-what-make-status-checks">What <code>make status</code>
-Checks</a></li>
+<li><a href="#the-daily-dashboard-status" id="toc-the-daily-dashboard-status">The Daily Dashboard
+(<code>status</code>)</a></li>
 <li><a href="#state-files" id="toc-state-files">State Files</a></li>
 <li><a href="#troubleshooting" id="toc-troubleshooting">Troubleshooting</a></li>
 </ul>
@@ -524,9 +524,9 @@ that the rest ran</td>
 </tr>
 <tr>
 <td><code>status</code></td>
-<td>Any time</td>
-<td>Health dashboard TUI; <code>make status</code> prints the plain-text
-version</td>
+<td>Daily</td>
+<td>The dashboard: unrecorded work, upkeep, Time Machine, then the
+installation. <code>make status</code> prints it as text</td>
 </tr>
 </tbody>
 </table>
@@ -554,7 +554,7 @@ on Apple Silicon)</li>
 </ol>
 <h2 id="health-check-make-doctor">Health Check
 (<code>make doctor</code>)</h2>
-<p><code>make status</code> says what is installed;
+<p><code>status</code> says what needs doing today;
 <code>make doctor</code> says what is broken. Each check exists because
 the problem it looks for was found on a real machine, doing damage
 nobody had noticed.</p>
@@ -738,6 +738,13 @@ forget.</p>
 <span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> sync ARGS=-c     <span class="co"># Auto-commit the Brewfile after updating</span></span>
 <span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> sync-prune       <span class="co"># Preview Brewfile entries that are no longer installed</span></span>
 <span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> sync-clean       <span class="co"># Remove them and commit</span></span></code></pre></div>
+<p><code>--prune</code> runs before the additions, so it prunes whether
+or not anything new is installed. It used to sit after them and was
+never reached when there was nothing new to add.
+<code>scripts/sync --check</code> prints the drift both ways, one
+tab-separated line each, and changes nothing: it is what
+<code>status</code> and <code>make doctor</code> read, so the three
+always agree.</p>
 <p><strong>How sync works:</strong></p>
 <ol type="1">
 <li>Reads the Brewfile to build a list of already-tracked packages</li>
@@ -1106,7 +1113,8 @@ preview)</td>
 </tr>
 <tr>
 <td><code>make status</code></td>
-<td>Show installation status</td>
+<td>The dashboard’s panels as text
+(<code>mimac-status --plain</code>)</td>
 </tr>
 <tr>
 <td><code>make sync</code></td>
@@ -1239,7 +1247,8 @@ and the tests in <code>tests/</code></td>
 <tbody>
 <tr>
 <td><code>status</code></td>
-<td>Health dashboard TUI (<code>mimac-status</code>)</td>
+<td>The daily dashboard TUI (<code>mimac-status</code>); <code>f</code>
+runs a panel’s fix after asking</td>
 </tr>
 <tr>
 <td><code>doctor</code></td>
@@ -1277,26 +1286,57 @@ sourced libraries, not commands. They are tracked non-executable, and
 re-added.</p>
 </blockquote>
 <hr />
-<h1 id="what-make-status-checks">What <code>make status</code>
-Checks</h1>
+<h1 id="the-daily-dashboard-status">The Daily Dashboard
+(<code>status</code>)</h1>
+<p><code>status</code> opens the dashboard; <code>make status</code>
+prints the same panels as text. Daily work comes first, and the
+installation, which on a Mac set up long ago is green every day, is
+folded into one panel last. Each line that needs something shows its
+command beside it; <code>f</code> runs the selected panel’s first one,
+after asking. Ported from mrk’s <code>mrk-status</code>.</p>
+<p><strong>Unrecorded</strong> — what the next Mac would not get:</p>
 <ul>
-<li><strong>Dotfiles</strong> — Which files are symlinked into
-<code>~/</code> and which are missing</li>
-<li><strong>Tools</strong> — Which scripts/bin symlinks are live in
-<code>~/bin</code> and which are broken</li>
-<li><strong>macOS Defaults</strong> — Whether defaults have been applied
-(rollback script present)</li>
-<li><strong>Backups</strong> — Number of dotfile backups in
-<code>~/.mimac/backups/</code> (the <code>status</code> dashboard shows
-this only when there is one)</li>
-<li><strong>Shell</strong> — Current login shell (should be Zsh)</li>
-<li><strong>PATH</strong> — Whether <code>~/bin</code> is on the
-PATH</li>
-<li><strong>Homebrew</strong> — Version installed</li>
-<li><strong>Brewfile packages</strong> — Each formula and cask:
-installed or missing</li>
+<li>Homebrew packages installed but not in the Brewfile
+(<code>make sync ARGS=-c</code>), and Brewfile entries not installed —
+<code>make sync-clean</code> if you removed them, <code>make brew</code>
+if they are not installed yet. Both come from <code>sync --check</code>,
+so the panel and <code>sync</code> agree.</li>
+<li><code>~/MiMac</code>: uncommitted changes, commits not pushed
+(<code>git push</code>), a branch with no upstream</li>
+<li>How old the app-preferences snapshot in
+<code>~/.mimac/preferences</code> is (information only)</li>
 </ul>
-<p>For problems rather than inventory, use <code>make doctor</code>.</p>
+<p><strong>Upkeep</strong> — what has fallen behind:</p>
+<ul>
+<li><code>~/MiMac</code> behind origin, as of the last fetch
+(<code>make pull</code>). Nothing here waits for the network:
+<code>check-updates</code> fetches in the background once a day.</li>
+<li>The Go tools older than their source
+(<code>make build-tools</code>), by the rule <code>make doctor</code>
+uses</li>
+<li>Homebrew packages outdated (<code>make update</code>), from the last
+<code>brew update</code></li>
+<li>macOS updates for the installed version (<code>make updates</code>),
+from macOS’s own record of its last check. Only macOS itself can be a
+major upgrade: Safari and the Command Line Tools carry version numbers
+ahead of the OS and are counted as ordinary updates. A major upgrade is
+named and never counted, as <code>make updates</code> treats it.</li>
+</ul>
+<p><strong>Time Machine Backups</strong> — from Time Machine’s own
+record: the age of the last completed backup and where it went, green
+under a day, amber under a week, red after. An attempt newer than the
+last backup is named, since that usually means the backup disk was not
+connected. Time Machine’s settings file is privacy-protected; without
+Full Disk Access the dashboard reads it through
+<code>defaults export</code>, which needs none.</p>
+<p><strong>Installation</strong> — dotfiles linked, <code>~/bin</code>
+links into the repo, the login shell, <code>~/bin</code> on
+<code>PATH</code>, Homebrew, how much of the Brewfile is installed,
+whether the macOS defaults and hardening were applied (their rollback
+scripts), and any files setup displaced into
+<code>~/.mimac/backups</code>. A check that is fine shows one line; a
+problem shows its detail.</p>
+<p>For a deeper check, with repairs, use <code>make doctor</code>.</p>
 <hr />
 <h1 id="state-files">State Files</h1>
 <p>MiMac writes runtime state to <code>~/.mimac/</code> and

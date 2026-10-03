@@ -84,7 +84,8 @@ mimac_skip_link() {
     uninstall) return 0 ;;                                  # use make targets
     # ~/bin/status belongs to the mimac-status TUI (make mimac-status links
     # it). Linking this script too made setup and build-tools overwrite each
-    # other's link on every run. `make status` still runs this script.
+    # other's link on every run. `make status` still runs this script, which
+    # prints the same dashboard as text (mimac-status --plain).
     status) return 0 ;;
     *) return 1 ;;
   esac
@@ -92,6 +93,49 @@ mimac_skip_link() {
 
 mimac_mktemp()   { mktemp    "${TMPDIR:-/tmp}/mimac.XXXXXX"; }
 mimac_mktemp_d() { mktemp -d "${TMPDIR:-/tmp}/mimac.XXXXXX"; }
+
+# mimac_is_dotfile PATH — PATH, an entry at the top of dotfiles/, is one setup
+# links into ~: a regular file, not a directory or a symlink, and not
+# documentation, an example or Finder's .DS_Store. doctor and mimac-status
+# (checkDotfiles) apply the same rule.
+#
+# setup used to link whatever was there. Claude Code creates dotfiles/.claude/
+# for a session started in that folder (.gitignore lists it), and setup would
+# then have moved the real ~/.claude — settings, sessions, memory — into
+# ~/.mimac/backups and linked ~/.claude into the repository. mrk did exactly
+# that (its audit 19, W-4).
+mimac_is_dotfile() {
+  [[ -f "$1" && ! -L "$1" ]] || return 1
+  case "${1##*/}" in
+    *.example|README*|*.md|.DS_Store) return 1 ;;
+  esac
+}
+
+# tool_freshness REPO BINDIR — for each Go tool MiMac builds, print its name
+# and its state, tab-separated: "ok"; "stale", when a source under tools/<dir>
+# or tools/theme — go.mod and go.sum included, since a dependency bump changes
+# the binary without touching a .go file — is newer than BINDIR/NAME; or
+# "missing". Both tools import the shared theme, so a change there makes each
+# one stale. doctor and mimac-status both read it, so they agree.
+tool_freshness() {
+  local repo=$1 bindir=$2 name dir bin f state
+  for name in mimac-picker mimac-status; do
+    case "$name" in
+      mimac-picker) dir=picker ;;
+      *)            dir=$name ;;
+    esac
+    bin="$bindir/$name"
+    if [[ ! -e "$bin" ]]; then
+      state=missing
+    else
+      state=ok
+      while IFS= read -r -d '' f; do
+        if [[ "$f" -nt "$bin" ]]; then state=stale; break; fi
+      done < <(find "$repo/tools/$dir" "$repo/tools/theme" \( -name '*.go' -o -name go.mod -o -name go.sum \) -print0 2>/dev/null)
+    fi
+    printf '%s\t%s\n' "$name" "$state"
+  done
+}
 
 # topgrade_verdict RC LOG — say what topgrade's exit status RC means, from the
 # Summary it printed into LOG, a recording of the run.

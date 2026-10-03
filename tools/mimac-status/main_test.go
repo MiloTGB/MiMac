@@ -7,53 +7,100 @@ import (
 	"testing"
 )
 
-// The Backups check read ~/.mimac/backup, which nothing writes, so it warned
-// "No backup directory" on every Mac. It reads ~/.mimac/backups now, counts
-// only directories that hold something, and is left out when there are none.
-func TestCheckBackups(t *testing.T) {
-	state := t.TempDir()
+// Brewfile drift is sync's own answer, `sync --check`, read here. A check that
+// could not run must say so, and never render as a screen of missing packages:
+// in mrk a swallowed `brew list` failure once read every tracked package as
+// "(missing)".
 
-	if _, ok := checkBackups(state); ok {
-		t.Fatal("no backups directory: the check should be left out")
+// withStubBrew puts a brew running script first on PATH, and leaves no other
+// Homebrew for brewBin to find.
+func withStubBrew(t *testing.T, script string) string {
+	t.Helper()
+	dir := t.TempDir()
+	stub := filepath.Join(dir, "brew")
+	if err := os.WriteFile(stub, []byte(script), 0o755); err != nil {
+		t.Fatalf("writing stub: %v", err)
 	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	noOtherBrew(t)
+	return dir
+}
 
-	// The directory setup never wrote, with something in it: still nothing.
-	if err := os.MkdirAll(filepath.Join(state, "backup", "20260101-000000"), 0o755); err != nil {
+// noOtherBrew stops brewBin finding the real Homebrew at its fixed paths.
+func noOtherBrew(t *testing.T) {
+	t.Helper()
+	old := brewPaths
+	brewPaths = []string{filepath.Join(t.TempDir(), "no-brew")}
+	t.Cleanup(func() { brewPaths = old })
+}
+
+// repoWithSync makes a checkout whose scripts/sync is script.
+func repoWithSync(t *testing.T, script string) string {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "scripts"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(state, "backup", "20260101-000000", ".zshrc"), nil, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "scripts", "sync"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := checkBackups(state); ok {
-		t.Fatal("~/.mimac/backup is not where setup writes; it should not count")
-	}
+	return root
+}
 
-	// An empty run directory, as setup used to leave on every relink.
-	backups := filepath.Join(state, "backups")
-	if err := os.MkdirAll(filepath.Join(backups, "20260925-202135"), 0o755); err != nil {
-		t.Fatal(err)
+func TestBrewDriftReadsSyncCheck(t *testing.T) {
+	withStubBrew(t, "#!/bin/sh\nexit 0\n")
+	repo := repoWithSync(t, "#!/bin/sh\n[ \"$1\" = --check ] || exit 9\n"+
+		"printf 'add\\tformula\\tjq\\nadd\\tcask\\tfirefox\\nprune\\tformula\\twget\\nnoise line\\n'\n"+
+		"echo '  ▸ Scanning installed Homebrew packages...' >&2\n")
+	d := readBrewDrift(repo)
+	if d.err != nil || d.noBrew {
+		t.Fatalf("a successful sync --check should be read, got err=%v noBrew=%v", d.err, d.noBrew)
 	}
-	if _, ok := checkBackups(state); ok {
-		t.Fatal("an empty backup directory is not a backup")
+	if got := strings.Join(d.adds, ","); got != "jq,firefox (cask)" {
+		t.Errorf("adds = %q, want jq,firefox (cask)", got)
 	}
+	if got := strings.Join(d.prunes, ","); got != "wget" {
+		t.Errorf("prunes = %q, want wget", got)
+	}
+}
 
-	// Two real backups: counted, newest first.
-	for _, d := range []string{"20260926-090000", "20261003-120000"} {
-		if err := os.MkdirAll(filepath.Join(backups, d), 0o755); err != nil {
-			t.Fatal(err)
+func TestBrewDriftFailureIsAFailureNotMissingPackages(t *testing.T) {
+	withStubBrew(t, "#!/bin/sh\nexit 0\n")
+	repo := repoWithSync(t, "#!/bin/sh\necho '  ▸ Scanning installed Homebrew packages...' >&2\n"+
+		"echo '  ✗ brew list --formula failed — cannot determine installed formulae' >&2\nexit 1\n")
+	d := readBrewDrift(repo)
+	if d.err == nil || !strings.Contains(d.err.Error(), "brew list --formula failed") {
+		t.Fatalf("a failed sync --check should be an error naming sync's last word, got %v", d.err)
+	}
+	un := checkUnrecorded(repo, t.TempDir(), d)
+	for _, l := range un.lines {
+		if strings.Contains(l.text, "not installed") {
+			t.Errorf("a check that could not run reported packages as not installed: %q", l.text)
 		}
-		if err := os.WriteFile(filepath.Join(backups, d, ".aliases"), nil, 0o644); err != nil {
-			t.Fatal(err)
-		}
 	}
-	c, ok := checkBackups(state)
-	if !ok {
-		t.Fatal("two backups: the check should be shown")
+	if !strings.Contains(texts(un), "sync --check failed") {
+		t.Errorf("Unrecorded should say the comparison failed:\n%s", texts(un))
 	}
-	if c.sev != sevOK || c.summary != "2 backup(s)" {
-		t.Errorf("got %v %q, want OK \"2 backup(s)\"", c.sev, c.summary)
+	if g := brewfileSummary(writeBrewfile(t), d); g.sev != sevWarn {
+		t.Errorf("Installation's Brewfile line should warn when the comparison failed, got sev=%v", g.sev)
 	}
-	if !strings.Contains(c.detail, "Latest:   20261003-120000") {
-		t.Errorf("detail should name the newest backup: %q", c.detail)
+}
+
+func TestBrewDriftWithNoHomebrew(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	noOtherBrew(t)
+	repo := repoWithSync(t, "#!/bin/sh\necho 'must not run' >&2\nexit 1\n")
+	d := readBrewDrift(repo)
+	if !d.noBrew || d.err != nil {
+		t.Fatalf("with no Homebrew anywhere, drift should be noBrew without running sync, got %+v", d)
 	}
+}
+
+func writeBrewfile(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "Brewfile"), []byte("brew \"jq\"\ncask \"firefox\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return root
 }

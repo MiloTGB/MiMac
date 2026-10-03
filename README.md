@@ -15,7 +15,7 @@ Everything is idempotent — run any command as often as you like.
 | `make update` | Any time | Upgrade every package (topgrade: Homebrew, casks, oh-my-zsh, pipx, gh extensions), then say which steps failed and that the rest ran |
 | `make updates` | Any time | Install macOS updates for this version. **Never a major upgrade** — `ARGS=-n` to preview |
 | `make sync` | After installing or removing apps | Pick which new Homebrew packages go into the Brewfile |
-| `status` | Any time | Health dashboard TUI (`make status` for the plain-text version) |
+| `status` | Daily | The dashboard: what is unrecorded, what has fallen behind, Time Machine, then the installation. `f` runs a fix (`make status` prints it as text) |
 
 All of these, and every other target, also work from `~` — `~/Makefile` forwards them to the repo.
 
@@ -47,7 +47,7 @@ permissions, old-hostname completion caches, `~/bin` links, stale TUI binaries).
 | `make updates` | macOS updates for the installed version only (`ARGS=-n` to preview) |
 | `make pull` | Fast-forward MiMac to origin, then rebuild and relink what the pulled commits changed |
 | `make sync` | Snapshot installed Homebrew packages into the Brewfile |
-| `make status` | Show installation status |
+| `make status` | Print the dashboard's panels as text (`mimac-status --plain`) |
 | `make snapshot-prefs` | Export app preferences to `~/.mimac/preferences` |
 | `make trim-services` | Disable background launchd agents this Mac does not need (`ARGS=-n` to preview) |
 | `make harden` | Security hardening (Touch ID sudo via `sudo_local`, screen lock, firewall) |

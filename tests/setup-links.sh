@@ -108,6 +108,24 @@ else
   fail "a second run: exit $RC, backups now: $(backups | tr '\n' ' ')"; show
 fi
 
+# ── 4. The rule setup, doctor and the dashboard share ────────────────────────
+
+# mimac_is_dotfile: a regular file only. A directory there — the dotfiles/.claude/
+# Claude Code creates — would otherwise displace the real ~/.claude.
+R="$W/rule"
+mkdir -p "$R/.claude"
+for f in .zshrc README.md notes.md x.example .DS_Store; do : > "$R/$f"; done
+ln -s "$R/.zshrc" "$R/.linked"
+got=""
+for f in .zshrc .claude README.md notes.md x.example .DS_Store .linked; do
+  mimac_is_dotfile "$R/$f" && got="$got $f"
+done
+if [[ "$got" == " .zshrc" ]]; then
+  pass "mimac_is_dotfile: a regular file, and not a directory, a link, docs, an example or .DS_Store"
+else
+  fail "mimac_is_dotfile accepted:$got"
+fi
+
 if (( fails )); then
   err "$fails setup link check(s) failed"
   exit 1

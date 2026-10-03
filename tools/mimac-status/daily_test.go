@@ -1,0 +1,624 @@
+package main
+
+import (
+	"bytes"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+// The daily panels read real git repositories, lib.sh's own functions, a stub
+// brew and fixture plists, all under temporary directories. git runs with the
+// global and system config cut off, so a signing key or a hook in the real
+// config cannot take part.
+
+func gitEnv(t *testing.T) {
+	t.Helper()
+	for k, v := range map[string]string{
+		"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1",
+		"GIT_AUTHOR_NAME": "test", "GIT_AUTHOR_EMAIL": "test@test.invalid",
+		"GIT_COMMITTER_NAME": "test", "GIT_COMMITTER_EMAIL": "test@test.invalid",
+	} {
+		t.Setenv(k, v)
+	}
+}
+
+func run(t *testing.T, dir, name string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%s %s in %s: %v\n%s", name, strings.Join(args, " "), dir, err, out)
+	}
+	return string(out)
+}
+
+func write(t *testing.T, path, body string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// newRepo makes a repository at dir with one commit on main, and, when origin
+// is true, a bare origin elsewhere that it tracks and has pushed to, whose path
+// it returns.
+func newRepo(t *testing.T, dir string, origin bool) string {
+	t.Helper()
+	write(t, filepath.Join(dir, "README"), "x\n")
+	run(t, dir, "git", "init", "-q", "-b", "main")
+	run(t, dir, "git", "add", "-A")
+	run(t, dir, "git", "commit", "-qm", "first")
+	if !origin {
+		return ""
+	}
+	bare := filepath.Join(t.TempDir(), "origin.git")
+	run(t, dir, "git", "init", "-q", "--bare", "-b", "main", bare)
+	run(t, dir, "git", "remote", "add", "origin", bare)
+	run(t, dir, "git", "push", "-q", "-u", "origin", "main")
+	run(t, dir, "git", "remote", "set-head", "origin", "main")
+	return bare
+}
+
+// mimacRepo is a checkout holding the real scripts/lib.sh, committed and pushed.
+func mimacRepo(t *testing.T) string {
+	root, _ := mimacRepoWithOrigin(t)
+	return root
+}
+
+func mimacRepoWithOrigin(t *testing.T) (root, origin string) {
+	t.Helper()
+	gitEnv(t)
+	root = filepath.Join(t.TempDir(), "MiMac")
+	lib, err := os.ReadFile(filepath.Join("..", "..", "scripts", "lib.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(root, "scripts", "lib.sh"), string(lib))
+	return root, newRepo(t, root, true)
+}
+
+func line(g group, substr string) (statusLine, bool) {
+	for _, l := range g.lines {
+		if strings.Contains(l.text, substr) {
+			return l, true
+		}
+	}
+	return statusLine{}, false
+}
+
+// ── Unrecorded ──────────────────────────────────────────────────────────────
+
+func TestUnrecordedBrewDrift(t *testing.T) {
+	repo := mimacRepo(t)
+	home := t.TempDir()
+
+	g := checkUnrecorded(repo, home, brewDrift{adds: []string{"jq", "firefox (cask)"}, prunes: []string{"wget"}})
+	add, ok := line(g, "installed but not in the Brewfile: jq, firefox (cask)")
+	if !ok || add.sev != sevWarn || add.fix != fixSyncAdd {
+		t.Errorf("an installed package the Brewfile lacks should warn with %q, got %+v:\n%s", fixSyncAdd, add, texts(g))
+	}
+	prune, ok := line(g, "in the Brewfile is not installed: wget")
+	if !ok || prune.sev != sevWarn || prune.fix != "" {
+		t.Errorf("a Brewfile entry not installed should warn with no fix — the repairs are opposites — got %+v:\n%s", prune, texts(g))
+	}
+	if _, ok := line(g, "removed on purpose: make sync-clean · not installed yet: make brew"); !ok {
+		t.Errorf("the two repairs should both be named:\n%s", texts(g))
+	}
+	if g.fix != fixSyncAdd {
+		t.Errorf("the panel's fix should be the first warning's, %q, got %q", fixSyncAdd, g.fix)
+	}
+
+	g = checkUnrecorded(repo, home, brewDrift{})
+	if l, ok := line(g, "The Brewfile matches"); !ok || l.sev != sevOK {
+		t.Errorf("no drift should read as matching:\n%s", texts(g))
+	}
+	if g.sev != sevOK {
+		t.Errorf("a clean checkout with no drift should be OK, its preferences line an aside, got %v:\n%s", g.sev, texts(g))
+	}
+}
+
+func TestUnrecordedCheckout(t *testing.T) {
+	repo := mimacRepo(t)
+	home := t.TempDir()
+
+	if l, ok := line(checkUnrecorded(repo, home, brewDrift{}), "committed and pushed"); !ok || l.sev != sevOK {
+		t.Fatalf("a pushed checkout should read as committed and pushed")
+	}
+
+	write(t, filepath.Join(repo, "README"), "changed\n")
+	write(t, filepath.Join(repo, "new-file"), "untracked\n")
+	g := checkUnrecorded(repo, home, brewDrift{})
+	// No fix: what to commit, and how to describe it, is a decision.
+	if l, ok := line(g, "1 uncommitted change"); !ok || l.sev != sevWarn || l.fix != "" {
+		t.Errorf("a tracked change should warn, with no fix to run:\n%s", texts(g))
+	}
+	if l, ok := line(g, "1 untracked file"); !ok || l.sev != sevInfo {
+		t.Errorf("an untracked file should be named, as information:\n%s", texts(g))
+	}
+
+	run(t, repo, "git", "commit", "-qam", "local")
+	g = checkUnrecorded(repo, home, brewDrift{})
+	if l, ok := line(g, "1 commit not pushed"); !ok || l.sev != sevWarn || l.fix != fixPush {
+		t.Errorf("an unpushed commit should warn with %q:\n%s", fixPush, texts(g))
+	}
+	if g.fix != fixPush {
+		t.Errorf("the panel's fix should be the push, the first warning with one; got %q", g.fix)
+	}
+
+	run(t, repo, "git", "switch", "-q", "-c", "loose")
+	g = checkUnrecorded(repo, home, brewDrift{})
+	if l, ok := line(g, "no upstream, so nothing pushes it"); !ok || l.sev != sevWarn {
+		t.Errorf("a branch with no upstream should warn:\n%s", texts(g))
+	}
+}
+
+// The preferences snapshot stays on this Mac until it is carried over, so its
+// age is information: shown with its command, never a warning, never what f runs.
+func TestUnrecordedAppPreferences(t *testing.T) {
+	repo := mimacRepo(t)
+	home := t.TempDir()
+	fixed := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
+	old := now
+	now = func() time.Time { return fixed }
+	t.Cleanup(func() { now = old })
+
+	g := checkUnrecorded(repo, home, brewDrift{})
+	l, ok := line(g, "App preferences never snapshotted to ~/.mimac/preferences")
+	if !ok || l.sev != sevInfo || l.fix != fixSnapshot {
+		t.Errorf("no snapshot should be information with %q:\n%s", fixSnapshot, texts(g))
+	}
+	if g.sev != sevOK || g.fix != "" {
+		t.Errorf("an aside should not colour the panel or become its fix: sev %v, fix %q", g.sev, g.fix)
+	}
+
+	// The newest file anywhere under it, App Support copies included.
+	plist := filepath.Join(home, ".mimac", "preferences", "iTerm2.plist")
+	nested := filepath.Join(home, ".mimac", "preferences", "app-support", "Loopback", "Devices.plist")
+	write(t, plist, "x")
+	write(t, nested, "x")
+	for p, age := range map[string]time.Duration{plist: 30 * 24 * time.Hour, nested: 3 * time.Hour} {
+		if err := os.Chtimes(p, fixed.Add(-age), fixed.Add(-age)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	g = checkUnrecorded(repo, home, brewDrift{})
+	if l, ok := line(g, "App preferences snapshotted 3 hours ago"); !ok || l.sev != sevInfo {
+		t.Errorf("the snapshot's age should be its newest file's:\n%s", texts(g))
+	}
+}
+
+// ── Upkeep ──────────────────────────────────────────────────────────────────
+
+// upkeepFixtures points the macOS update check at fixtures, and stubs brew.
+func upkeepFixtures(t *testing.T, outdated string) {
+	t.Helper()
+	withStubBrew(t, "#!/bin/sh\n[ \"$1\" = outdated ] || exit 9\n"+
+		"[ \"$HOMEBREW_NO_AUTO_UPDATE\" = 1 ] || { echo 'would auto-update' >&2; exit 3; }\n"+
+		"printf '"+outdated+"'\n")
+	dir := t.TempDir()
+	oldV, oldS := sysVersionPlist, suPlist
+	sysVersionPlist, suPlist = filepath.Join(dir, "SystemVersion.plist"), filepath.Join(dir, "su.plist")
+	t.Cleanup(func() { sysVersionPlist, suPlist = oldV, oldS })
+	write(t, sysVersionPlist, plistXML(`<dict><key>ProductVersion</key><string>26.0.1</string></dict>`))
+}
+
+func plistXML(body string) string {
+	return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">` + body + `</plist>`
+}
+
+func TestUpkeepCheckoutAgainstOrigin(t *testing.T) {
+	upkeepFixtures(t, "")
+	repo, origin := mimacRepoWithOrigin(t)
+	bin := t.TempDir()
+
+	if l, ok := line(checkUpkeep(repo, t.TempDir(), bin), "level with origin/main"); !ok || l.sev != sevOK {
+		t.Errorf("a checkout level with origin should be OK")
+	}
+
+	// Another clone pushes; this one fetches but does not pull.
+	other := filepath.Join(t.TempDir(), "other")
+	run(t, filepath.Dir(other), "git", "clone", "-q", origin, other)
+	write(t, filepath.Join(other, "README"), "upstream\n")
+	run(t, other, "git", "commit", "-qam", "upstream")
+	run(t, other, "git", "push", "-q")
+	run(t, repo, "git", "fetch", "-q")
+	g := checkUpkeep(repo, t.TempDir(), bin)
+	if l, ok := line(g, "1 commit behind origin/main, fetched"); !ok || l.sev != sevWarn || l.fix != fixPull {
+		t.Errorf("a checkout behind origin should warn with %q:\n%s", fixPull, texts(g))
+	}
+
+	run(t, repo, "git", "switch", "-q", "-c", "work")
+	if l, ok := line(checkUpkeep(repo, t.TempDir(), bin), "is on work, not main"); !ok || l.sev != sevInfo {
+		t.Errorf("on another branch, the comparison should be information, not a warning")
+	}
+}
+
+func TestUpkeepToolFreshness(t *testing.T) {
+	upkeepFixtures(t, "")
+	repo := mimacRepo(t)
+	bin := t.TempDir()
+	// Explicit times, a half hour apart, so the comparison never rests on
+	// whether two files written in the same second differ.
+	sources, built := time.Now().Add(-time.Hour), time.Now().Add(-30*time.Minute)
+	for _, d := range []string{"picker", "mimac-status", "theme"} {
+		src := filepath.Join(repo, "tools", d, "main.go")
+		write(t, src, "package main\n")
+		if err := os.Chtimes(src, sources, sources); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, b := range []string{"mimac-picker", "mimac-status"} {
+		write(t, filepath.Join(bin, b), "#!/bin/sh\n")
+		if err := os.Chtimes(filepath.Join(bin, b), built, built); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if l, ok := line(checkUpkeep(repo, t.TempDir(), bin), "Go tools built from the current source"); !ok || l.sev != sevOK {
+		t.Errorf("binaries newer than every source should be OK:\n%s", texts(checkUpkeep(repo, t.TempDir(), bin)))
+	}
+
+	// Each tool is held to its own directory, and mimac-picker's is
+	// tools/picker. A go.mod or a go.sum counts as a source: a dependency bump
+	// changes the binary without touching a .go file (mrk audit 20, X-11).
+	for _, c := range []struct{ file, stale string }{
+		{"picker/go.mod", "mimac-picker"},
+		{"mimac-status/go.sum", "mimac-status"},
+		{"mimac-status/extra.go", "mimac-status"},
+	} {
+		changed := filepath.Join(repo, "tools", c.file)
+		write(t, changed, "changed\n")
+		g := checkUpkeep(repo, t.TempDir(), bin)
+		want := "Older than their source: " + c.stale
+		if l, ok := line(g, "Older than their source"); !ok || l.text != want || l.fix != fixBuildTools {
+			t.Errorf("a newer tools/%s should make %s stale, and it alone:\n%s", c.file, c.stale, texts(g))
+		}
+		if err := os.Remove(changed); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// A change to the shared theme makes every tool stale.
+	write(t, filepath.Join(repo, "tools", "theme", "main.go"), "package main // changed\n")
+	g := checkUpkeep(repo, t.TempDir(), bin)
+	if l, ok := line(g, "Older than their source: mimac-picker, mimac-status"); !ok || l.fix != fixBuildTools {
+		t.Errorf("a theme change should make both stale, with %q:\n%s", fixBuildTools, texts(g))
+	}
+
+	if err := os.Remove(filepath.Join(bin, "mimac-status")); err != nil {
+		t.Fatal(err)
+	}
+	if l, ok := line(checkUpkeep(repo, t.TempDir(), bin), "Not built: mimac-status"); !ok || l.fix != fixBuildTools {
+		t.Errorf("a missing binary should warn with %q", fixBuildTools)
+	}
+}
+
+func TestUpkeepHomebrewOutdated(t *testing.T) {
+	upkeepFixtures(t, `wget\njq\n`)
+	repo := mimacRepo(t)
+	g := checkUpkeep(repo, t.TempDir(), t.TempDir())
+	if l, ok := line(g, "2 Homebrew packages outdated: jq, wget"); !ok || l.fix != fixUpdate {
+		t.Errorf("outdated packages should warn with %q, sorted — and the stub refuses to run without HOMEBREW_NO_AUTO_UPDATE:\n%s", fixUpdate, texts(g))
+	}
+	upkeepFixtures(t, "")
+	if l, ok := line(checkUpkeep(repo, t.TempDir(), t.TempDir()), "Homebrew packages up to date"); !ok || l.sev != sevOK {
+		t.Errorf("nothing outdated should be OK")
+	}
+}
+
+func TestUpkeepMacOSUpdates(t *testing.T) {
+	upkeepFixtures(t, "")
+	update := func(name, ver string) string {
+		return `<dict><key>Display Name</key><string>` + name + `</string><key>Display Version</key><string>` + ver + `</string></dict>`
+	}
+	write(t, suPlist, plistXML(`<dict><key>LastSuccessfulDate</key><date>2026-09-30T08:00:00Z</date>
+		<key>RecommendedUpdates</key><array>`+update("macOS Tahoe 26.0.2", "26.0.2")+update("macOS 27.0.1", "27.0.1")+`</array></dict>`))
+	lines := macOSUpdateLines()
+	g := group{"x", linesSev(lines), lines, ""}
+	if l, ok := line(g, "1 macOS update for macOS 26"); !ok || l.fix != fixUpdates || !strings.Contains(l.text, "macOS Tahoe 26.0.2") {
+		t.Errorf("an update for the installed major version should warn with %q:\n%s", fixUpdates, texts(g))
+	}
+	if l, ok := line(g, "being a major upgrade: macOS 27.0.1"); !ok || l.sev != sevInfo {
+		t.Errorf("a major upgrade should be named, as information, and never counted:\n%s", texts(g))
+	}
+
+	write(t, suPlist, plistXML(`<dict><key>RecommendedUpdates</key><array>`+update("macOS 27.0.1", "27.0.1")+`</array></dict>`))
+	lines = macOSUpdateLines()
+	g = group{"x", linesSev(lines), lines, ""}
+	if g.sev != sevOK {
+		t.Errorf("only a major upgrade on offer should leave the check OK, got %v:\n%s", g.sev, texts(g))
+	}
+
+	if err := os.Remove(suPlist); err != nil {
+		t.Fatal(err)
+	}
+	if lines := macOSUpdateLines(); len(lines) != 1 || lines[0].sev != sevInfo {
+		t.Errorf("no record of a check should be one line of information, got %+v", lines)
+	}
+}
+
+// Safari and the Command Line Tools carry versions ahead of the OS, and make
+// updates installs them: macos-updates applies its version test to macOS
+// alone. mrk-status once applied it to every entry, said "No macOS update", and
+// named both as major upgrades (mrk audit 20, X-3). This Mac's own record
+// offered Safari 27.0 on macOS 15 on 2026-10-03.
+func TestUpkeepOnlyMacOSIsEverAMajorUpgrade(t *testing.T) {
+	upkeepFixtures(t, "") // macOS 26.0.1 is installed
+	entry := func(name, ver, id string) string {
+		s := `<dict><key>Display Version</key><string>` + ver + `</string><key>Identifier</key><string>` + id + `</string>`
+		if name != "" {
+			s += `<key>Display Name</key><string>` + name + `</string>`
+		}
+		return s + `</dict>`
+	}
+	record := func(entries ...string) {
+		t.Helper()
+		write(t, suPlist, plistXML(`<dict><key>RecommendedUpdates</key><array>`+strings.Join(entries, "")+`</array></dict>`))
+	}
+	safari := entry("Safari", "27.0", "Safari27.0TahoeAuto-27.0")
+	clt := entry("Command Line Tools for Xcode", "27.0", "Command Line Tools for Xcode-27.0")
+	// The entry this Mac's record held on 2026-10-01.
+	upgrade := entry("macOS 27.0.1", "27.0.1", "MSU_UPDATE_26A5434_full_27.0.1_major")
+
+	record(safari, clt, upgrade)
+	lines := macOSUpdateLines()
+	g := group{"x", linesSev(lines), lines, ""}
+	if l, ok := line(g, "2 macOS updates for macOS 26"); !ok || l.sev != sevWarn || l.fix != fixUpdates ||
+		!strings.Contains(l.text, "Safari 27.0") || !strings.Contains(l.text, "Command Line Tools for Xcode 27.0") {
+		t.Errorf("Safari and the Command Line Tools should be counted as updates, with %q:\n%s", fixUpdates, texts(g))
+	}
+	if l, ok := line(g, "being a major upgrade:"); !ok || l.text != "  offered, and never installed by MiMac, being a major upgrade: macOS 27.0.1" {
+		t.Errorf("only macOS 27.0.1 should be named as a major upgrade:\n%s", texts(g))
+	}
+
+	// Safari alone: an update, and no major upgrade to name.
+	record(safari)
+	lines = macOSUpdateLines()
+	g = group{"x", linesSev(lines), lines, ""}
+	if _, ok := line(g, "1 macOS update for macOS 26"); !ok || len(lines) != 1 {
+		t.Errorf("Safari alone should be one update and nothing else:\n%s", texts(g))
+	}
+
+	// macOS is known by its identifier too, and an entry with no name is taken
+	// for macOS: each is judged by its version.
+	record(entry("Tahoe 27.0", "27.0", "macOS 27-26A428"), entry("", "27.1", "x"), entry("", "26.1", "y"))
+	lines = macOSUpdateLines()
+	g = group{"x", linesSev(lines), lines, ""}
+	if l, ok := line(g, "1 macOS update for macOS 26"); !ok || !strings.HasSuffix(l.text, ": macOS 26.1") {
+		t.Errorf("a nameless 26.1 should be the one update:\n%s", texts(g))
+	}
+	if l, ok := line(g, "being a major upgrade:"); !ok || !strings.HasSuffix(l.text, ": Tahoe 27.0, macOS 27.1") {
+		t.Errorf("an entry whose identifier says macOS, and a nameless 27.1, should be the major upgrades:\n%s", texts(g))
+	}
+}
+
+// ── Time Machine ────────────────────────────────────────────────────────────
+
+func TestTimeMachine(t *testing.T) {
+	dir := t.TempDir()
+	old, oldNow := tmPlist, now
+	tmPlist = filepath.Join(dir, "tm.plist")
+	fixed := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
+	now = func() time.Time { return fixed }
+	t.Cleanup(func() { tmPlist, now = old, oldNow })
+
+	at := func(d time.Duration) string { return fixed.Add(-d).Format(time.RFC3339) }
+	dest := func(inner string) string {
+		return `<dict><key>AutoBackup</key><true/><key>Destinations</key><array><dict>` + inner + `</dict></array></dict>`
+	}
+	for _, tc := range []struct {
+		name, plist, want string
+		sev               severity
+	}{
+		{"no destination", `<dict><key>PreferencesVersion</key><integer>6</integer></dict>`,
+			"No destination: Time Machine is not backing up", sevWarn},
+		{"a backup two hours old", dest(`<key>SnapshotDates</key><array><date>` + at(30*time.Hour) + `</date><date>` + at(2*time.Hour) + `</date></array>`),
+			"Last backup 2 hours ago", sevOK},
+		{"three days old", dest(`<key>SnapshotDates</key><array><date>` + at(72*time.Hour) + `</date></array>`),
+			"Last backup 3 days ago", sevWarn},
+		{"ten days old", dest(`<key>SnapshotDates</key><array><date>` + at(240*time.Hour) + `</date></array>`),
+			"Last backup 10 days ago", sevErr},
+		{"only the reference snapshot date", dest(`<key>ReferenceLocalSnapshotDate</key><date>` + at(time.Hour) + `</date>`),
+			"Last backup 1 hour ago", sevOK},
+		{"a destination with no backup yet", dest(`<key>DestinationID</key><string>X</string>`),
+			"No completed backup recorded, on 1 destination", sevWarn},
+		{"automatic backups off", `<dict><key>AutoBackup</key><false/><key>Destinations</key><array><dict><key>SnapshotDates</key><array><date>` + at(time.Hour) + `</date></array></dict></array></dict>`,
+			"Automatic backups are off", sevWarn},
+		// This Mac's record on 2026-10-03: the last backup to TM, two
+		// destinations, and later attempts that recorded none.
+		{"the destination named, and an attempt that did not complete",
+			`<dict><key>AutoBackup</key><true/><key>Destinations</key><array>` +
+				`<dict><key>LastKnownVolumeName</key><string>Backups of MacBook Pro</string><key>AttemptDates</key><array><date>` + at(7*24*time.Hour) + `</date></array></dict>` +
+				`<dict><key>LastKnownVolumeName</key><string>TM</string><key>SnapshotDates</key><array><date>` + at(18*24*time.Hour) + `</date></array>` +
+				`<key>AttemptDates</key><array><date>` + at(18*24*time.Hour+5*time.Minute) + `</date><date>` + at(7*24*time.Hour) + `</date></array></dict>` +
+				`</array></dict>`,
+			"Last backup 18 days ago", sevErr},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			write(t, tmPlist, plistXML(tc.plist))
+			g := checkTimeMachine()
+			if _, ok := line(g, tc.want); !ok || g.sev != tc.sev {
+				t.Errorf("want %q at sev %v, got sev %v:\n%s", tc.want, tc.sev, g.sev, texts(g))
+			}
+		})
+	}
+
+	// The record above, in full: where the last backup went, and the attempt.
+	g := checkTimeMachine()
+	if l, ok := line(g, "Last backup 18 days ago"); !ok || !strings.HasSuffix(l.text, ", to TM; 2 destinations") {
+		t.Errorf("the last backup should name its destination and count both:\n%s", texts(g))
+	}
+	if l, ok := line(g, "the last attempt, 7 days ago, did not complete"); !ok || l.sev != sevInfo {
+		t.Errorf("an attempt after the last backup should be named, as information:\n%s", texts(g))
+	}
+
+	// The attempt of a backup that finished is not one that failed, whether
+	// Time Machine stamps it at the start, before the snapshot, or at the end,
+	// a few minutes after it. Its record keeps only a week of attempts, so
+	// which one it does could not be read from this Mac's.
+	for _, offset := range []time.Duration{10 * time.Minute, -5 * time.Minute} {
+		write(t, tmPlist, plistXML(`<dict><key>AutoBackup</key><true/><key>Destinations</key><array><dict>`+
+			`<key>AttemptDates</key><array><date>`+at(2*time.Hour+offset)+`</date></array>`+
+			`<key>SnapshotDates</key><array><date>`+at(2*time.Hour)+`</date></array></dict></array></dict>`))
+		if _, ok := line(checkTimeMachine(), "did not complete"); ok {
+			t.Errorf("an attempt %v from its backup was reported as not completing:\n%s", -offset, texts(checkTimeMachine()))
+		}
+	}
+
+	// A destination that never completed one, and an attempt.
+	write(t, tmPlist, plistXML(`<dict><key>AutoBackup</key><true/><key>Destinations</key><array><dict>`+
+		`<key>AttemptDates</key><array><date>`+at(3*24*time.Hour)+`</date></array></dict></array></dict>`))
+	g = checkTimeMachine()
+	if _, ok := line(g, "No completed backup recorded, on 1 destination"); !ok || g.sev != sevWarn {
+		t.Errorf("no backup at all should warn:\n%s", texts(g))
+	}
+	if _, ok := line(g, "the last attempt, 3 days ago, did not complete"); !ok {
+		t.Errorf("the attempt should be named:\n%s", texts(g))
+	}
+}
+
+// ── Installation ────────────────────────────────────────────────────────────
+
+func TestFoldKeepsProblemsAndOffersOnlyARepair(t *testing.T) {
+	parts := []group{
+		{"Fine", sevOK, []statusLine{sl(sevOK, "all good"), sl(sevOK, "detail that should not show")}, ""},
+		{"Optional", sevInfo, []statusLine{sl(sevInfo, "Not applied — run: make defaults")}, "make defaults"},
+		{"Broken", sevWarn, []statusLine{sl(sevInfo, "3 linked, 1 broken"), sl(sevWarn, "x (broken)"), sl(sevInfo, "an aside")}, "make fix-exec"},
+		{"Worse", sevErr, []statusLine{sl(sevErr, "gone")}, "make worse"},
+	}
+	g := fold("Installation", parts)
+	if g.sev != sevErr {
+		t.Errorf("the panel should take the worst severity, got %v", g.sev)
+	}
+	if g.fix != "make fix-exec" {
+		t.Errorf("the panel's fix should be the first among checks that warn or err, got %q", g.fix)
+	}
+	got := texts(g)
+	for _, want := range []string{"Fine — all good", "Optional — Not applied", "Broken — 3 linked, 1 broken", "  x (broken)", "Worse — gone"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q:\n%s", want, got)
+		}
+	}
+	for _, not := range []string{"detail that should not show", "an aside"} {
+		if strings.Contains(got, not) {
+			t.Errorf("a line that neither warns nor errs should not be folded in: %q", not)
+		}
+	}
+	if l, _ := line(g, "Optional"); l.fix != "" {
+		t.Errorf("an informational check's suggestion is not a repair, and should carry no fix, got %q", l.fix)
+	}
+}
+
+// ── The whole dashboard ─────────────────────────────────────────────────────
+
+func TestPanelsComeDailyFirst(t *testing.T) {
+	upkeepFixtures(t, "")
+	old := tmPlist
+	tmPlist = filepath.Join(t.TempDir(), "tm.plist")
+	t.Cleanup(func() { tmPlist = old })
+	write(t, tmPlist, plistXML(`<dict/>`))
+	repo := mimacRepo(t)
+	write(t, filepath.Join(repo, "scripts", "sync"), "#!/bin/sh\nexit 0\n")
+	if err := os.Chmod(filepath.Join(repo, "scripts", "sync"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, g := range collect(repo, t.TempDir(), t.TempDir()) {
+		got = append(got, g.name)
+	}
+	if want := "Unrecorded,Upkeep,Time Machine Backups,Installation"; strings.Join(got, ",") != want {
+		t.Errorf("panels = %s, want %s", strings.Join(got, ","), want)
+	}
+}
+
+func TestPlainPrintsEveryPanelAndFix(t *testing.T) {
+	groups := []group{
+		{"Unrecorded", sevWarn, []statusLine{slFix(sevWarn, "1 package installed but not in the Brewfile: jq", fixSyncAdd), sl(sevOK, "~/MiMac: committed and pushed")}, fixSyncAdd},
+		{"Time Machine Backups", sevOK, []statusLine{sl(sevOK, "Last backup 1 hour ago")}, ""},
+	}
+	var b bytes.Buffer
+	renderPlain(&b, groups)
+	out := b.String()
+	for _, want := range []string{"mimac-status  1 warning", "\n⚠ Unrecorded\n", "    ⚠ 1 package installed but not in the Brewfile: jq  → make sync ARGS=-c",
+		"    ✓ ~/MiMac: committed and pushed", "\n✓ Time Machine Backups\n"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "\x1b[") {
+		t.Errorf("output to something that is not a terminal should carry no colour codes:\n%q", out)
+	}
+}
+
+// ── Property lists ──────────────────────────────────────────────────────────
+
+func TestDecodePlistXML(t *testing.T) {
+	v, err := decodePlistXML([]byte(plistXML(`<dict>
+		<key>s</key><string>a &amp; b</string>
+		<key>i</key><integer>-3</integer>
+		<key>r</key><real>1.5</real>
+		<key>t</key><true/><key>f</key><false/>
+		<key>d</key><date>2026-09-30T08:00:00Z</date>
+		<key>b</key><data>aGVs
+		bG8=</data>
+		<key>a</key><array><string>x</string><dict><key>k</key><string>v</string></dict></array>
+		<key>empty</key><dict/>
+	</dict>`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := pDict(v)
+	if pString(m["s"]) != "a & b" || m["i"] != int64(-3) || m["r"] != 1.5 {
+		t.Errorf("scalars: %#v", m)
+	}
+	if b, ok := pBool(m["t"]); !ok || !b {
+		t.Errorf("<true/> = %#v", m["t"])
+	}
+	if b, ok := pBool(m["f"]); !ok || b {
+		t.Errorf("<false/> = %#v", m["f"])
+	}
+	if d, ok := pTime(m["d"]); !ok || !d.Equal(time.Date(2026, 9, 30, 8, 0, 0, 0, time.UTC)) {
+		t.Errorf("<date> = %#v", m["d"])
+	}
+	if string(m["b"].([]byte)) != "hello" {
+		t.Errorf("<data> = %q", m["b"])
+	}
+	a := pArray(m["a"])
+	if len(a) != 2 || pString(a[0]) != "x" || pString(pDict(a[1])["k"]) != "v" {
+		t.Errorf("<array> = %#v", a)
+	}
+	if e := pDict(m["empty"]); e == nil || len(e) != 0 {
+		t.Errorf("<dict/> = %#v", m["empty"])
+	}
+	for _, bad := range []string{"not xml", plistXML(`<dict><string>no key</string></dict>`), plistXML(`<integer>x</integer>`)} {
+		if _, err := decodePlistXML([]byte(bad)); err == nil {
+			t.Errorf("%q should not decode", bad)
+		}
+	}
+}
+
+func TestPanelSeverityIgnoresAsides(t *testing.T) {
+	for _, tc := range []struct {
+		in   []severity
+		want severity
+	}{
+		{[]severity{sevOK, sevInfo}, sevOK},
+		{[]severity{sevInfo, sevInfo}, sevInfo},
+		{[]severity{sevInfo, sevWarn, sevOK}, sevWarn},
+		{[]severity{sevErr, sevInfo}, sevErr},
+		{nil, sevOK},
+	} {
+		if got := panelSev(tc.in...); got != tc.want {
+			t.Errorf("panelSev(%v) = %v, want %v", tc.in, got, tc.want)
+		}
+	}
+}

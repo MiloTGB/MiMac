@@ -16,6 +16,25 @@ var (
 	ColRed       = lipgloss.AdaptiveColor{Light: "#af0000", Dark: "#ff8787"}
 )
 
+// ── Shared utilities ─────────────────────────────────────────────────────────
+
+// Truncate clips s to at most n runes, appending "…" when clipped. It never
+// returns something wider than n: zero columns or fewer is an empty string, so
+// a caller whose width arithmetic goes negative gets nothing, not an overflow.
+func Truncate(s string, n int) string {
+	runes := []rune(s)
+	if len(runes) <= n {
+		return s
+	}
+	if n <= 0 {
+		return ""
+	}
+	if n == 1 {
+		return "…"
+	}
+	return string(runes[:n-1]) + "…"
+}
+
 // ── Shared styles ────────────────────────────────────────────────────────────
 
 var (

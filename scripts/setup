@@ -396,26 +396,17 @@ phase_dotfiles() {
   local skipped=0
   local backed_up=0
   
-  # Count total for progress (excluding example and documentation files)
+  # Count total for progress: what mimac_is_dotfile accepts — regular files,
+  # never a directory such as the dotfiles/.claude/ Claude Code creates.
   local total=0
   for src in "$REPO_ROOT/dotfiles"/*; do
-    [[ -e "$src" ]] || continue
-    # Skip .example files and README files
-    case "$(basename "$src")" in
-      *.example|README*|*.md) continue ;;
-      *) ((total++)) || true ;;
-    esac
+    mimac_is_dotfile "$src" && { ((total++)) || true; }
   done
   
   local current=0
   for src in "$REPO_ROOT/dotfiles"/*; do
-    [[ -e "$src" ]] || continue
-    
-    # Skip .example files and README/documentation files
-    case "$(basename "$src")" in
-      *.example|README*|*.md) continue ;;
-    esac
-    
+    mimac_is_dotfile "$src" || continue
+
     found=1
     ((current++)) || true
     dst="$HOME/$(basename "$src")"

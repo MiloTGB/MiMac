@@ -34,7 +34,7 @@ repair what it set up.
 | `make update` | Any time | Upgrade every package via topgrade, then say which steps failed and that the rest ran |
 | `make updates` | Any time | macOS updates for this version only — never a major upgrade |
 | `make sync` | After installing or removing apps | Record new Homebrew packages in the Brewfile |
-| `status` | Any time | Health dashboard TUI; `make status` prints the plain-text version |
+| `status` | Daily | The dashboard: unrecorded work, upkeep, Time Machine, then the installation. `make status` prints it as text |
 
 Every one of these works from `~/` as well — `~/Makefile` forwards them to the repo, and every
 other target too.
@@ -58,7 +58,7 @@ Runs, in order, carrying on past a step that fails so that `doctor` always gets 
 
 ## Health Check (`make doctor`)
 
-`make status` says what is installed; `make doctor` says what is broken. Each check exists
+`status` says what needs doing today; `make doctor` says what is broken. Each check exists
 because the problem it looks for was found on a real machine, doing damage nobody had noticed.
 
 ```bash
@@ -175,6 +175,11 @@ make sync ARGS=-c     # Auto-commit the Brewfile after updating
 make sync-prune       # Preview Brewfile entries that are no longer installed
 make sync-clean       # Remove them and commit
 ```
+
+`--prune` runs before the additions, so it prunes whether or not anything new is installed.
+It used to sit after them and was never reached when there was nothing new to add.
+`scripts/sync --check` prints the drift both ways, one tab-separated line each, and changes
+nothing: it is what `status` and `make doctor` read, so the three always agree.
 
 **How sync works:**
 
@@ -403,7 +408,7 @@ from `~/MiMac/`. Any other target is forwarded to `~/MiMac` too, with its `ARGS`
 | `make doctor` | Health check (`ARGS=--fix` to repair the safe items) |
 | `make update` | Upgrade all packages (topgrade) |
 | `make updates` | macOS updates for this version only (`ARGS=-n` to preview) |
-| `make status` | Show installation status |
+| `make status` | The dashboard's panels as text (`mimac-status --plain`) |
 | `make sync` | Sync installed Homebrew packages into the Brewfile (`ARGS=-c` commit, `ARGS=-n` dry run) |
 | `make pull` | Fast-forward MiMac to origin, then rebuild and relink what the pulled commits changed |
 | `make snapshot-prefs` | Export app preferences |
@@ -441,7 +446,7 @@ Symlinked into `~/bin` by Phase 1.
 
 | Command | Purpose |
 |---|---|
-| `status` | Health dashboard TUI (`mimac-status`) |
+| `status` | The daily dashboard TUI (`mimac-status`); `f` runs a panel's fix after asking |
 | `doctor` | Same as `make doctor` |
 | `macos-updates` | Same as `make updates` |
 | `check-updates` | "MiMac has new commits" prompt at shell start, once per new remote head; runs from `.zshrc` |
@@ -454,19 +459,44 @@ Symlinked into `~/bin` by Phase 1.
 
 ---
 
-# What `make status` Checks
+# The Daily Dashboard (`status`)
 
-- **Dotfiles** — Which files are symlinked into `~/` and which are missing
-- **Tools** — Which scripts/bin symlinks are live in `~/bin` and which are broken
-- **macOS Defaults** — Whether defaults have been applied (rollback script present)
-- **Backups** — Number of dotfile backups in `~/.mimac/backups/` (the `status` dashboard
-  shows this only when there is one)
-- **Shell** — Current login shell (should be Zsh)
-- **PATH** — Whether `~/bin` is on the PATH
-- **Homebrew** — Version installed
-- **Brewfile packages** — Each formula and cask: installed or missing
+`status` opens the dashboard; `make status` prints the same panels as text. Daily work comes
+first, and the installation, which on a Mac set up long ago is green every day, is folded into
+one panel last. Each line that needs something shows its command beside it; `f` runs the
+selected panel's first one, after asking. Ported from mrk's `mrk-status`.
 
-For problems rather than inventory, use `make doctor`.
+**Unrecorded** — what the next Mac would not get:
+
+- Homebrew packages installed but not in the Brewfile (`make sync ARGS=-c`), and Brewfile
+  entries not installed — `make sync-clean` if you removed them, `make brew` if they are not
+  installed yet. Both come from `sync --check`, so the panel and `sync` agree.
+- `~/MiMac`: uncommitted changes, commits not pushed (`git push`), a branch with no upstream
+- How old the app-preferences snapshot in `~/.mimac/preferences` is (information only)
+
+**Upkeep** — what has fallen behind:
+
+- `~/MiMac` behind origin, as of the last fetch (`make pull`). Nothing here waits for the
+  network: `check-updates` fetches in the background once a day.
+- The Go tools older than their source (`make build-tools`), by the rule `make doctor` uses
+- Homebrew packages outdated (`make update`), from the last `brew update`
+- macOS updates for the installed version (`make updates`), from macOS's own record of its
+  last check. Only macOS itself can be a major upgrade: Safari and the Command Line Tools
+  carry version numbers ahead of the OS and are counted as ordinary updates. A major upgrade
+  is named and never counted, as `make updates` treats it.
+
+**Time Machine Backups** — from Time Machine's own record: the age of the last completed backup
+and where it went, green under a day, amber under a week, red after. An attempt newer than the
+last backup is named, since that usually means the backup disk was not connected. Time
+Machine's settings file is privacy-protected; without Full Disk Access the dashboard reads it
+through `defaults export`, which needs none.
+
+**Installation** — dotfiles linked, `~/bin` links into the repo, the login shell, `~/bin` on
+`PATH`, Homebrew, how much of the Brewfile is installed, whether the macOS defaults and
+hardening were applied (their rollback scripts), and any files setup displaced into
+`~/.mimac/backups`. A check that is fine shows one line; a problem shows its detail.
+
+For a deeper check, with repairs, use `make doctor`.
 
 ---
 
